@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Study not launched</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}?v=260910f">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260910f">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">B</span>
+    <div class="brand-text"><strong>PROJECT BEACON</strong><span>Survey</span></div>
+  </div>
+  {% with active='survey', nav_study=slug %}{% include '_nav.html' %}{% endwith %}
+</header>
+<main class="login-main">
+  <div class="login-card">
+    <h1>This study has not been launched yet.</h1>
+    <p>The research team must set it live from the Studio before respondents can take part.</p>
+    <p>Part of the team? <a href="/login?next={{ request.full_path.rstrip('?') | urlencode }}">Sign in</a>
+       to preview the draft, or open it in the <a href="/studio/#{{ slug }}">Studio</a>.</p>
+  </div>
+</main>
+</body>
+</html>

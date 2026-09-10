@@ -15,7 +15,12 @@ __pycache__/
 node_modules/
 
 # runtime data (never publish respondent data or recordings)
-oncology_launch_study/webapp/survey.db
-oncology_launch_study/webapp/survey.db-shm
-oncology_launch_study/webapp/survey.db-wal
-oncology_launch_study/webapp/voice/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+uploads/voice/
+uploads/narration/
+
+# legacy location, never commit
+oncology_launch_study/
+uploads/media/

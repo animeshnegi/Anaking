@@ -1,0 +1,103 @@
+/* Explainer (animated TPP walkthrough) - shared by the respondent survey and the
+   Studio preview. Loaded by both survey.html and studio.html. */
+:root{--ink:#1a2733;--muted:#5f7284;--line:#dde5ec;--accent:#0b4f6c;--accent-2:#12789e;
+  --accent-soft:#e8f2f7;--good:#1a7f4b;--warn:#b26a00}
+
+/* ================= explainer overlay ================= */
+.overlay{position:fixed;inset:0;background:rgba(12,24,34,.72);z-index:60;display:grid;
+  place-items:center;padding:18px;animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.overlay-box{background:#fff;border-radius:14px;max-width:660px;width:100%;overflow:hidden;
+  box-shadow:0 24px 70px rgba(0,0,0,.35);animation:riseIn .35s cubic-bezier(.16,1,.3,1)}
+@keyframes riseIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.overlay-head{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:12px 16px;background:var(--accent);color:#fff;flex-wrap:wrap}
+.ex-badge{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  background:rgba(255,255,255,.16);padding:4px 10px;border-radius:5px}
+.ex-hint{font-size:11.5px;opacity:.8}
+.ex-stage{padding:8px 16px 0}
+.ex-art{background:linear-gradient(180deg,#f8fbfc,#eef4f7);border-radius:10px;overflow:hidden}
+.scene-svg{display:block;width:100%;height:auto;max-height:270px}
+.ex-caption{padding:14px 4px 12px;display:flex;flex-direction:column;gap:3px;min-height:66px}
+.ex-caption strong{font-size:16px;color:var(--accent)}
+.ex-caption span{font-size:13.5px;color:var(--muted)}
+.ex-bar{padding:0 16px}
+.ex-track{height:4px;background:#e6edf1;border-radius:99px;overflow:hidden}
+.ex-fill{height:100%;width:0;background:var(--accent-2);border-radius:99px;transition:width .1s linear}
+.ex-controls{display:flex;align-items:center;gap:8px;padding:12px 16px 16px;flex-wrap:wrap}
+.ex-btn{border:1px solid var(--line);background:#fff;padding:8px 15px;border-radius:7px;
+  font:inherit;font-size:13px;cursor:pointer;font-weight:600}
+.ex-btn:hover{background:#f4f7f9}
+.ex-btn.ghost{background:transparent;border-color:transparent;color:var(--muted);font-weight:400}
+.ex-btn.ghost:hover{background:#eef2f5;color:var(--ink)}
+.ex-scene{margin-left:auto;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* scene entrance animations */
+.a-fade{animation:aFade .6s ease both}
+.a-rise{animation:aRise .6s cubic-bezier(.16,1,.3,1) both}
+.a-pop{animation:aPop .45s cubic-bezier(.34,1.56,.64,1) both}
+.a-pulse{animation:aPulse 2.4s ease-in-out infinite}
+.a-grow{transform-origin:center bottom;animation:aGrow 1s cubic-bezier(.16,1,.3,1) both}
+.a-draw{stroke-dasharray:120;stroke-dashoffset:120;animation:aDraw .9s ease forwards}
+.a-donut{stroke-dasharray:415;stroke-dashoffset:415;animation:aDonut 1.3s cubic-bezier(.16,1,.3,1) forwards}
+@keyframes aFade{from{opacity:0}to{opacity:1}}
+@keyframes aRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes aPop{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+@keyframes aPulse{0%,100%{opacity:.2;transform:scale(1)}50%{opacity:.6;transform:scale(1.06)}}
+@keyframes aGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes aDraw{to{stroke-dashoffset:0}}
+@keyframes aDonut{to{stroke-dashoffset:290}}
+
+.ex-close{margin-left:auto;background:rgba(255,255,255,.16);border:none;color:#fff;width:30px;
+  height:30px;border-radius:7px;font-size:17px;line-height:1;cursor:pointer}
+.ex-close:hover{background:rgba(255,255,255,.3)}
+.ex-fallback{padding:16px 22px 20px;font-size:14px;line-height:1.6;color:var(--ink)}
+.ex-fallback ul{margin:10px 0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.ex-fallback-note{color:var(--muted);font-size:12.5px;margin:10px 0 0}
+.ex-hint{margin-right:2px}
+.ex-controls{padding-top:6px}
+
+/* explainer v2: shell, ambient light, crossfading art layers, dots */
+.ex-shell{position:relative}
+.ex-ambient{position:absolute;inset:-14px 0 0 0;opacity:.6;transition:background 1.2s ease;pointer-events:none;
+  background:radial-gradient(90% 70% at 50% 0%,rgba(127,212,240,.25),transparent 70%)}
+.ex-shell[data-scene="safety"] .ex-ambient{background:radial-gradient(90% 70% at 50% 0%,rgba(224,155,45,.22),transparent 70%)}
+.ex-shell[data-scene="efficacy"] .ex-ambient{background:radial-gradient(90% 70% at 50% 0%,rgba(11,79,108,.16),transparent 70%)}
+.ex-shell[data-scene="cdx"] .ex-ambient{background:radial-gradient(90% 70% at 50% 0%,rgba(18,120,158,.2),transparent 70%)}
+.ex-shell[data-scene="attributes"] .ex-ambient{background:radial-gradient(90% 70% at 50% 0%,rgba(26,127,75,.15),transparent 70%)}
+.ex-stage{position:relative;height:252px;background:linear-gradient(180deg,#fbfdfe,#eef4f7);
+  border-radius:10px;overflow:hidden}
+.ex-art{position:absolute;inset:0;background:transparent;border-radius:0;overflow:hidden;
+  opacity:0;transition:opacity .55s ease}
+.ex-art.on{opacity:1}
+.ex-caption.cap-in{animation:capIn .5s ease both}
+@keyframes capIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.ex-bar{padding-top:2px}
+.ex-dots{display:flex;gap:7px;justify-content:center;padding-top:8px}
+.ex-dot{width:8px;height:8px;border-radius:50%;background:#cfdce6;cursor:pointer;transition:all .25s}
+.ex-dot:hover{background:#9db2c2}
+.ex-dot.cur{background:var(--accent-2);transform:scale(1.4)}
+
+/* explainer v2 artwork motion */
+.a-ecg{stroke-dasharray:640;stroke-dashoffset:640;animation:aEcg 2.6s ease-out forwards}
+@keyframes aEcg{to{stroke-dashoffset:0}}
+.a-ants{stroke-dasharray:7 7;animation:aAnts 1s linear infinite}
+@keyframes aAnts{to{stroke-dashoffset:-14}}
+.a-spin{animation:aSpin 5s linear infinite}
+@keyframes aSpin{to{transform:rotate(360deg)}}
+.a-float{animation:aFloatY 3.4s ease-in-out infinite}
+@keyframes aFloatY{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.a-bub{animation:aBubY 3s ease-in infinite}
+@keyframes aBubY{0%{transform:translateY(0);opacity:0}15%{opacity:.6}100%{transform:translateY(-64px);opacity:0}}
+.a-wave{animation:aWaveX 2.8s linear infinite}
+@keyframes aWaveX{to{transform:translateX(-40px)}}
+.a-orbit{animation:aOrbitR 9s linear infinite}
+@keyframes aOrbitR{to{transform:rotate(360deg)}}
+.a-km{stroke-dasharray:760;stroke-dashoffset:760;animation:aKmDraw 2.4s ease-out forwards}
+@keyframes aKmDraw{to{stroke-dashoffset:0}}
+.a-helix{stroke-dasharray:420;stroke-dashoffset:420;animation:aHelixDraw 1.8s ease forwards}
+@keyframes aHelixDraw{to{stroke-dashoffset:0}}
+.a-stamp{animation:aStampIn .6s cubic-bezier(.2,1.4,.4,1) both}
+@keyframes aStampIn{0%{opacity:0;transform:scale(1.7) rotate(-14deg)}60%{opacity:1;transform:scale(.95) rotate(2deg)}
+  100%{opacity:1;transform:scale(1) rotate(0)}}
+

@@ -1,0 +1,14 @@
+{#- App switcher shown in every header.  `active` = home | survey | studio | admin.
+    Links carry no token: the admin session cookie (set on /login) authorises Studio/Admin. -#}
+{%- set tq = ('?token=' ~ url_token) if url_token else '' -%}
+<nav class="appnav" aria-label="Apps">
+  <a class="appnav-link{% if active == 'home' %} on{% endif %}" href="/">Home</a>
+  <a class="appnav-link{% if active == 'survey' %} on{% endif %}" href="{{ survey_href or '/survey/' }}">Survey</a>
+  <a class="appnav-link{% if active == 'studio' %} on{% endif %}" href="/studio/{{ tq }}{% if nav_study %}#{{ nav_study }}{% endif %}">Studio</a>
+  <a class="appnav-link{% if active == 'admin' %} on{% endif %}" href="/admin/{% if nav_study %}?study={{ nav_study }}{{ '&token=' ~ url_token if url_token }}{% else %}{{ tq }}{% endif %}">Admin</a>
+  {% if signed_in or url_token %}
+    <a class="appnav-link out" href="/logout" title="End the admin session on this browser">Sign out</a>
+  {% else %}
+    <a class="appnav-link key" href="/login?next={{ request.full_path.rstrip('?') | urlencode }}">Sign in</a>
+  {% endif %}
+</nav>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEACON Studio - survey platform</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/explainer.css') }}?v=260910f">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/studio.css') }}?v=260910f">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260910f">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/preview-skin.css') }}?v=260910f">
+</head>
+<body>
+<header class="st-top">
+  <div class="st-brand"><span class="st-mark">B</span>
+    <div><strong>BEACON Studio</strong><span>build &middot; preview &middot; launch &middot; changes autosave</span></div>
+  </div>
+  <div class="st-top-actions">
+    {% with active='studio' %}{% include '_nav.html' %}{% endwith %}
+  </div>
+</header>
+<main id="st-root"></main>
+<!-- single-question test view (from the ▶ button in the question list) -->
+<div class="overlay" id="qtest" hidden>
+  <div class="overlay-box qtest-box">
+    <div class="overlay-head">
+      <span class="ex-badge">Test view</span>
+      <span class="ex-hint" id="qtest-title"></span>
+      <button class="ex-close" id="qtest-close" type="button" title="Close">&times;</button>
+    </div>
+    <div id="qtest-body" class="survey-skin"></div>
+    <div class="st-note" id="qtest-note"></div>
+  </div>
+</div>
+<div class="st-modal" id="st-modal" hidden></div>
+<div class="st-toast" id="st-toast" hidden></div>
+
+<!-- TPP walkthrough preview: the same explainer respondents see, driven by the unsaved
+     scenes in the editor so the team can check it before publishing -->
+<div class="overlay" id="explainer" hidden>
+  <div class="overlay-box">
+    <div class="overlay-head">
+      <span class="ex-badge" id="ex-badge">Walkthrough preview</span>
+      <span class="ex-hint" id="ex-hint">Exactly what respondents will see</span>
+      <button class="ex-close" id="ex-close" type="button" title="Close">&times;</button>
+    </div>
+    <div id="ex-mount"></div>
+  </div>
+</div>
+<script>window.BEACON_PREVIEW_MODE = true;</script>
+<script src="{{ url_for('static', filename='js/qlogic.js') }}?v=260910f"></script>
+<script src="{{ url_for('static', filename='js/survey.js') }}?v=260910f"></script>
+<script src="{{ url_for('static', filename='js/explainer.js') }}?v=260910f"></script>
+<script src="{{ url_for('static', filename='js/studio.js') }}?v=260910f"></script>
+</body>
+</html>

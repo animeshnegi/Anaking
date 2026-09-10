@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROJECT BEACON — Research platform</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}?v=260910f">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260910f">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">B</span>
+    <div class="brand-text">
+      <strong>PROJECT BEACON</strong>
+      <span>Pharma market-research platform</span>
+    </div>
+  </div>
+  {% with active='home' %}{% include '_nav.html' %}{% endwith %}
+</header>
+
+<main>
+  {% if bad_token %}
+    <div class="notice bad">That <code>?token=</code> is not correct — <a href="/login">sign in</a> with the admin token.</div>
+  {% elif url_token %}
+    <div class="notice ok">Signed in (token carried in links because this browser blocks cookies in embedded previews).</div>
+  {% elif not signed_in %}
+    <div class="notice">
+      <strong>Research team?</strong> <a href="/login">Sign in once</a> with the admin token to unlock
+      Studio, Admin and draft previews on this browser. Respondents never need to sign in.
+    </div>
+  {% else %}
+    <div class="notice ok">Signed in as research team — Studio and Admin are unlocked on this browser.
+      <a href="/logout">Sign out</a></div>
+  {% endif %}
+
+  <section class="apps">
+    <a class="app app-survey" href="{{ url_for('survey.beacon_survey') }}">
+      <span class="app-kicker">Respondents</span>
+      <h2>Survey</h2>
+      <p>The live questionnaire respondents see: audio narration, animated product walkthrough,
+         choice tasks, gamified questions.</p>
+      <code>/survey/</code>
+      <span class="app-sub">Test mode (stored as T-codes): <code>/survey/test</code></span>
+    </a>
+
+    <a class="app app-studio {{ '' if (signed_in or url_token) else 'needs-token' }}"
+       href="{{ url_for('studio.page') }}{{ '?token=' ~ url_token if url_token }}">
+      <span class="app-kicker">Research team</span>
+      <h2>Studio</h2>
+      <p>Build surveys: create, edit and reorder questions, design the product walkthrough,
+         generate a balanced conjoint design, launch on a public link, see per-study analysis.</p>
+      <code>/studio/</code>
+      {% if not (signed_in or url_token) %}<span class="app-sub lock">&#128274; sign in required</span>{% endif %}
+    </a>
+
+    <a class="app app-admin {{ '' if (signed_in or url_token) else 'needs-token' }}"
+       href="{{ url_for('admin.page') }}{{ '?token=' ~ url_token if url_token }}">
+      <span class="app-kicker">Field management</span>
+      <h2>Admin</h2>
+      <p>Live counts, quota fill, demand headlines, data-quality flags, respondent list,
+         Excel / CSV / JSON exports and test-data reset.</p>
+      <code>/admin/</code>
+      {% if not (signed_in or url_token) %}<span class="app-sub lock">&#128274; sign in required</span>{% endif %}
+    </a>
+  </section>
+
+  <section class="studies">
+    <h3>Studies on this server</h3>
+    <table>
+      <thead><tr><th>Study</th><th>Status</th><th>Started</th><th>Complete</th><th>Respondent links</th>
+        {% if signed_in %}<th>Team</th>{% endif %}</tr></thead>
+      <tbody>
+      {% for s in studies %}
+        <tr>
+          <td><strong>{{ s.title }}</strong><br><small>{{ s.slug }}</small></td>
+          <td><span class="pill pill-{{ s.status }}">{{ s.status }}</span></td>
+          <td>{{ s.started }}</td>
+          <td>{{ s.complete }}</td>
+          <td>
+            <a href="/survey/{{ s.slug }}">live</a> &middot;
+            <a href="/survey/{{ s.slug }}/test">test</a>
+          </td>
+          {% if signed_in %}
+          <td>
+            <a href="/studio/#{{ s.slug }}">builder</a> &middot;
+            <a href="/admin/?study={{ s.slug }}">dashboard</a>
+            {% if s.status != 'live' %} &middot; <a href="/survey/{{ s.slug }}/test">preview</a>{% endif %}
+          </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>PROJECT BEACON &middot; Flask research platform &middot; <a href="/healthz">health</a></span>
+</footer>
+</body>
+</html>

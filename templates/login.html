@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROJECT BEACON — Sign in</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}?v=260910f">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260910f">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">B</span>
+    <div class="brand-text">
+      <strong>PROJECT BEACON</strong>
+      <span>Pharma market-research platform</span>
+    </div>
+  </div>
+  {% with active='home' %}{% include '_nav.html' %}{% endwith %}
+</header>
+
+<main class="login-main">
+  <form class="login-card" method="post" action="{{ url_for('home.login') }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <span class="app-kicker">Research team</span>
+    <h1>Sign in to Studio &amp; Admin</h1>
+    <p>Enter the admin token once. This browser then stays signed in for Studio, Admin and
+       draft-survey previews — no <code>?token=</code> needed on any link.</p>
+    {% if signed_in %}
+      <div class="login-ok">You are already signed in on this browser.
+        <a href="{{ next }}">Continue &rarr;</a> or <a href="{{ url_for('home.logout') }}">sign out</a>.</div>
+    {% endif %}
+    <label for="token">Admin token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" autofocus required>
+    {% if error %}<div class="login-err">{{ error }}</div>{% endif %}
+    <button type="submit">Sign in</button>
+    {% if default_hint %}
+      <div class="login-hint">
+        This server is running with the <strong>default</strong> token <code>{{ default_hint }}</code>.
+        Set a real one before going live: <code>ADMIN_TOKEN=… python3 app.py</code>
+        or <code>python3 app.py --admin-token …</code>.
+      </div>
+    {% else %}
+      <div class="login-hint">The token is set by whoever runs the server
+        (<code>ADMIN_TOKEN</code> environment variable or <code>--admin-token</code>);
+        it is also printed in the server's start-up log.</div>
+    {% endif %}
+  </form>
+</main>
+
+<footer class="foot">
+  <span>PROJECT BEACON &middot; Flask research platform &middot; <a href="/healthz">health</a></span>
+</footer>
+</body>
+</html>
