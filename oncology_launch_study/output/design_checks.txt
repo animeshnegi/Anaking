@@ -1,0 +1,116 @@
+PROJECT BEACON - DCE DESIGN DIAGNOSTICS
+==============================================================================
+STRUCTURE
+------------------------------------------------------------------------------
+Attributes / levels                     : 7 attributes x 3 levels
+Full factorial candidate profiles       : 2187
+Profile pool used                       : 27 profiles, orthogonal main-effects
+                                          plan 3^(7-4); each level of each attribute
+                                          appears exactly 9 times
+Choice tasks per respondent             : 9 tasks x 3 alternatives + 1 opt-out
+Utility parameters estimated            : 15
+Respondents                             : 100 US oncologists
+Total choice observations               : 900
+
+DESIGN CHECKS
+------------------------------------------------------------------------------
+Orthogonal array, level balance         : every level appears 9x  -> PASS
+Orthogonal array, cross-attribute max|r|: 0.0000  -> PASS
+Fielded design, cross-attribute max|r|  : 0.0000  -> PASS
+Dominant / duplicated alternatives      : 0  -> PASS
+Unconstrained D-optimal benchmark       : det(M)^(1/p) = 1.1605  (100% reference)
+Fielded design                          : det(M)^(1/p) = 1.1510  -> relative D-efficiency 99.2%
+  Relative D-efficiency is expressed against the best arrangement of these same
+  profiles, because vendors normalise the absolute D-efficiency figure differently
+  (Sawtooth divides by the task count, Ngene by the respondent count).
+
+LEVEL BALANCE (across all 27 alternatives shown)
+------------------------------------------------------------------------------
+OS      Median overall survival (OS) versus current standard of care
+          No proven OS benefit (PFS-only endpoint)                                   9  (33.3%)
+          +3 months median OS                                                        9  (33.3%)
+          +6 months median OS                                                        9  (33.3%)
+
+PFS12   12-month progression-free survival rate
+          25%                                                                        9  (33.3%)
+          35%                                                                        9  (33.3%)
+          45%                                                                        9  (33.3%)
+
+AE      Grade 3+ treatment-related adverse event rate
+          15%                                                                        9  (33.3%)
+          30%                                                                        9  (33.3%)
+          45%                                                                        9  (33.3%)
+
+ROUTE   Administration
+          IV infusion every 3 weeks (~30-60 min, infusion centre)                    9  (33.3%)
+          Subcutaneous injection every 4 weeks (~5 min, injection centre or home     9  (33.3%)
+          Oral, once daily (home administration)                                     9  (33.3%)
+
+CDX     Companion diagnostic (CDx) requirement
+          CDx required; result in 3 business days (broad NGS panel)                  9  (33.3%)
+          CDx required; result in 10 business days (broad NGS panel)                 9  (33.3%)
+          No CDx required                                                            9  (33.3%)
+
+COST    Estimated net cost of a 12-month course (all-in, patient level)
+          $75,000                                                                    9  (33.3%)
+          $110,000                                                                   9  (33.3%)
+          $150,000                                                                   9  (33.3%)
+
+ACCESS  Payer access status at month 1 post-launch
+          Formulary-listed, no prior authorisation (~80% of covered lives)           9  (33.3%)
+          Covered with prior authorisation (~60% of covered lives)                   9  (33.3%)
+          Limited coverage / frequent step-through required (~30% of covered liv     9  (33.3%)
+
+CONDITIONAL LOGIT SPECIFICATION (first level of each attribute = reference)
+------------------------------------------------------------------------------
+  beta1  OS: +3 months median OS
+  beta2  OS: +6 months median OS
+  beta3  PFS12: 35%
+  beta4  PFS12: 45%
+  beta5  AE: 30%
+  beta6  AE: 45%
+  beta7  ROUTE: Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)
+  beta8  ROUTE: Oral, once daily (home administration)
+  beta9  CDX: CDx required; result in 10 business days (broad NGS panel)
+  beta10 CDX: No CDx required
+  beta11 COST: $110,000
+  beta12 COST: $150,000
+  beta13 ACCESS: Covered with prior authorisation (~60% of covered lives)
+  beta14 ACCESS: Limited coverage / frequent step-through required (~30% of covered lives)
+  beta15 ASC_optout: continue current standard of care
+
+ANALYSIS-PATH CHECK - SIMULATED DATA, DESIGN VALIDATION ONLY, NOT A MARKET RESULT
+------------------------------------------------------------------------------
+Observations simulated                  : 900 (100 respondents x 9 tasks)
+Parameters estimated                    : 15
+Log-likelihood at MLE / at null         : -1001.18 / -1247.66
+McFadden pseudo-R2                      : 0.1976
+Correlation, true vs recovered beta     : 0.9867
+beta  label                                                                   true    est.    s.e.
+  b1   OS: +3 months median OS                                                 0.60    0.46    0.16
+  b2   OS: +6 months median OS                                                 1.10    1.01    0.15
+  b3   PFS12: 35%                                                              0.35    0.38    0.14
+  b4   PFS12: 45%                                                              0.70    0.58    0.15
+  b5   AE: 30%                                                                -0.70   -0.55    0.13
+  b6   AE: 45%                                                                -1.30   -1.15    0.15
+  b7   ROUTE: Subcutaneous injection every 4 weeks (~5 min, injection cen      0.30    0.23    0.15
+  b8   ROUTE: Oral, once daily (home administration)                           0.45    0.57    0.15
+  b9   CDX: CDx required; result in 10 business days (broad NGS panel)        -0.55   -0.55    0.15
+  b10  CDX: No CDx required                                                    0.35    0.47    0.13
+  b11  COST: $110,000                                                         -0.50   -0.40    0.12
+  b12  COST: $150,000                                                         -0.95   -0.91    0.15
+  b13  ACCESS: Covered with prior authorisation (~60% of covered lives)       -0.75   -0.47    0.14
+  b14  ACCESS: Limited coverage / frequent step-through required (~30% of     -1.40   -1.08    0.15
+  b15  ASC_optout: continue current standard of care                           0.55    0.82    0.20
+
+Interpretation: with 100 respondents the recovered coefficients reproduce the
+utilities used to generate the synthetic choices, and every standard error is
+small relative to its coefficient. The design therefore carries enough
+information to support the planned conditional logit and mixed logit
+estimation, relative-importance ranking, and price-elasticity / share
+simulation.
+
+Caution: the table above is fitted to SIMULATED choices. It demonstrates that
+the design and the estimation pipeline work. It says nothing about how real US
+oncologists will value these attributes; those numbers come only from the
+fielded survey.

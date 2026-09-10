@@ -1,0 +1,21 @@
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# sandbox / tooling noise
+.arena/
+.cache/
+.local/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+node_modules/
+
+# runtime data (never publish respondent data or recordings)
+oncology_launch_study/webapp/survey.db
+oncology_launch_study/webapp/survey.db-shm
+oncology_launch_study/webapp/survey.db-wal
+oncology_launch_study/webapp/voice/

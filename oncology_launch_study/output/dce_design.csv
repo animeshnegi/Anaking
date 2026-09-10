@@ -1,0 +1,37 @@
+task_id,alternative_id,alternative_label,OS_level,PFS12_level,AE_level,ROUTE_level,CDX_level,COST_level,ACCESS_level,OS_text,PFS12_text,AE_text,ROUTE_text,CDX_text,COST_text,ACCESS_text
+1,1,Treatment 1,3,3,2,2,1,1,3,+6 months median OS,45%,30%,"Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)",CDx required; result in 3 business days (broad NGS panel),"$75,000",Limited coverage / frequent step-through required (~30% of covered lives)
+1,2,Treatment 2,1,1,1,1,1,1,1,No proven OS benefit (PFS-only endpoint),25%,15%,"IV infusion every 3 weeks (~30-60 min, infusion centre)",CDx required; result in 3 business days (broad NGS panel),"$75,000","Formulary-listed, no prior authorisation (~80% of covered lives)"
+1,3,Treatment 3,2,2,1,3,2,2,3,+3 months median OS,35%,15%,"Oral, once daily (home administration)",CDx required; result in 10 business days (broad NGS panel),"$110,000",Limited coverage / frequent step-through required (~30% of covered lives)
+1,4,Continue current standard of care (none of these),,,,,,,,,,,,,,
+2,1,Treatment 1,1,3,3,3,3,2,2,No proven OS benefit (PFS-only endpoint),45%,45%,"Oral, once daily (home administration)",No CDx required,"$110,000",Covered with prior authorisation (~60% of covered lives)
+2,2,Treatment 2,1,2,2,2,2,3,3,No proven OS benefit (PFS-only endpoint),35%,30%,"Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)",CDx required; result in 10 business days (broad NGS panel),"$150,000",Limited coverage / frequent step-through required (~30% of covered lives)
+2,3,Treatment 3,2,1,3,2,1,3,1,+3 months median OS,25%,45%,"Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)",CDx required; result in 3 business days (broad NGS panel),"$150,000","Formulary-listed, no prior authorisation (~80% of covered lives)"
+2,4,Continue current standard of care (none of these),,,,,,,,,,,,,,
+3,1,Treatment 1,1,2,1,2,1,2,2,No proven OS benefit (PFS-only endpoint),35%,15%,"Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)",CDx required; result in 3 business days (broad NGS panel),"$110,000",Covered with prior authorisation (~60% of covered lives)
+3,2,Treatment 2,1,3,2,3,2,1,1,No proven OS benefit (PFS-only endpoint),45%,30%,"Oral, once daily (home administration)",CDx required; result in 10 business days (broad NGS panel),"$75,000","Formulary-listed, no prior authorisation (~80% of covered lives)"
+3,3,Treatment 3,1,1,3,1,3,3,3,No proven OS benefit (PFS-only endpoint),25%,45%,"IV infusion every 3 weeks (~30-60 min, infusion centre)",No CDx required,"$150,000",Limited coverage / frequent step-through required (~30% of covered lives)
+3,4,Continue current standard of care (none of these),,,,,,,,,,,,,,
+4,1,Treatment 1,1,1,2,1,2,2,2,No proven OS benefit (PFS-only endpoint),25%,30%,"IV infusion every 3 weeks (~30-60 min, infusion centre)",CDx required; result in 10 business days (broad NGS panel),"$110,000",Covered with prior authorisation (~60% of covered lives)
+4,2,Treatment 2,2,2,3,3,1,1,2,+3 months median OS,35%,45%,"Oral, once daily (home administration)",CDx required; result in 3 business days (broad NGS panel),"$75,000",Covered with prior authorisation (~60% of covered lives)
+4,3,Treatment 3,3,3,1,2,3,3,2,+6 months median OS,45%,15%,"Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)",No CDx required,"$150,000",Covered with prior authorisation (~60% of covered lives)
+4,4,Continue current standard of care (none of these),,,,,,,,,,,,,,
+5,1,Treatment 1,3,1,3,3,2,3,2,+6 months median OS,25%,45%,"Oral, once daily (home administration)",CDx required; result in 10 business days (broad NGS panel),"$150,000",Covered with prior authorisation (~60% of covered lives)
+5,2,Treatment 2,3,2,1,1,3,2,1,+6 months median OS,35%,15%,"IV infusion every 3 weeks (~30-60 min, infusion centre)",No CDx required,"$110,000","Formulary-listed, no prior authorisation (~80% of covered lives)"
+5,3,Treatment 3,2,3,2,1,3,1,2,+3 months median OS,45%,30%,"IV infusion every 3 weeks (~30-60 min, infusion centre)",No CDx required,"$75,000",Covered with prior authorisation (~60% of covered lives)
+5,4,Continue current standard of care (none of these),,,,,,,,,,,,,,
+6,1,Treatment 1,3,3,3,2,2,2,1,+6 months median OS,45%,45%,"Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)",CDx required; result in 10 business days (broad NGS panel),"$110,000","Formulary-listed, no prior authorisation (~80% of covered lives)"
+6,2,Treatment 2,3,2,2,1,1,3,2,+6 months median OS,35%,30%,"IV infusion every 3 weeks (~30-60 min, infusion centre)",CDx required; result in 3 business days (broad NGS panel),"$150,000",Covered with prior authorisation (~60% of covered lives)
+6,3,Treatment 3,3,1,1,3,3,1,3,+6 months median OS,25%,15%,"Oral, once daily (home administration)",No CDx required,"$75,000",Limited coverage / frequent step-through required (~30% of covered lives)
+6,4,Continue current standard of care (none of these),,,,,,,,,,,,,,
+7,1,Treatment 1,1,3,1,3,1,3,3,No proven OS benefit (PFS-only endpoint),45%,15%,"Oral, once daily (home administration)",CDx required; result in 3 business days (broad NGS panel),"$150,000",Limited coverage / frequent step-through required (~30% of covered lives)
+7,2,Treatment 2,3,2,3,1,2,1,3,+6 months median OS,35%,45%,"IV infusion every 3 weeks (~30-60 min, infusion centre)",CDx required; result in 10 business days (broad NGS panel),"$75,000",Limited coverage / frequent step-through required (~30% of covered lives)
+7,3,Treatment 3,2,1,2,2,3,2,3,+3 months median OS,25%,30%,"Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)",No CDx required,"$110,000",Limited coverage / frequent step-through required (~30% of covered lives)
+7,4,Continue current standard of care (none of these),,,,,,,,,,,,,,
+8,1,Treatment 1,2,1,1,2,2,1,2,+3 months median OS,25%,15%,"Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)",CDx required; result in 10 business days (broad NGS panel),"$75,000",Covered with prior authorisation (~60% of covered lives)
+8,2,Treatment 2,2,3,3,1,1,2,3,+3 months median OS,45%,45%,"IV infusion every 3 weeks (~30-60 min, infusion centre)",CDx required; result in 3 business days (broad NGS panel),"$110,000",Limited coverage / frequent step-through required (~30% of covered lives)
+8,3,Treatment 3,2,2,2,3,3,3,1,+3 months median OS,35%,30%,"Oral, once daily (home administration)",No CDx required,"$150,000","Formulary-listed, no prior authorisation (~80% of covered lives)"
+8,4,Continue current standard of care (none of these),,,,,,,,,,,,,,
+9,1,Treatment 1,2,3,1,1,2,3,1,+3 months median OS,45%,15%,"IV infusion every 3 weeks (~30-60 min, infusion centre)",CDx required; result in 10 business days (broad NGS panel),"$150,000","Formulary-listed, no prior authorisation (~80% of covered lives)"
+9,2,Treatment 2,3,1,2,3,1,2,1,+6 months median OS,25%,30%,"Oral, once daily (home administration)",CDx required; result in 3 business days (broad NGS panel),"$110,000","Formulary-listed, no prior authorisation (~80% of covered lives)"
+9,3,Treatment 3,1,2,3,2,3,1,1,No proven OS benefit (PFS-only endpoint),35%,45%,"Subcutaneous injection every 4 weeks (~5 min, injection centre or home health)",No CDx required,"$75,000","Formulary-listed, no prior authorisation (~80% of covered lives)"
+9,4,Continue current standard of care (none of these),,,,,,,,,,,,,,

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROJECT BEACON — Admin</title>
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">B</span>
+    <div class="brand-text">
+      <strong>PROJECT BEACON</strong>
+      <span>Field admin &amp; data export</span>
+    </div>
+  </div>
+  <div class="meta">
+    <span id="generated"></span>
+    <a class="linkbtn" id="take-survey" href="/" target="_blank">Open survey &rarr;</a>
+  </div>
+</header>
+
+<main>
+  <section class="toolbar">
+    <div class="scope">
+      <span class="scope-label">Data scope</span>
+      <div class="seg" id="scope-seg">
+        <button data-scope="all" class="on">Everything</button>
+        <button data-scope="real">Real only</button>
+        <button data-scope="test">Test only</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="dl-xlsx">Download Excel (.xlsx)</button>
+      <button class="btn" id="dl-csv">CSV</button>
+      <button class="btn" id="dl-json">JSON</button>
+      <button class="btn" id="refresh">&#8635; Refresh</button>
+    </div>
+  </section>
+
+  <section class="danger">
+    <div>
+      <strong>Reset for re-testing</strong>
+      <span class="sub">Clears stored responses so the same link can be reused. Respondent codes
+        restart from the beginning of their sequence.</span>
+    </div>
+    <div class="actions">
+      <button class="btn warn" id="reset-test">Clear test data</button>
+      <button class="btn warn" id="reset-real">Clear real data</button>
+      <button class="btn danger" id="reset-all">Clear everything</button>
+    </div>
+  </section>
+
+  <section class="cards" id="cards"></section>
+
+  <section class="grid2">
+    <div class="panel">
+      <h2>Quota fill <span class="hint">completed respondents</span></h2>
+      <div id="quota"></div>
+    </div>
+    <div class="panel">
+      <h2>Demand headlines</h2>
+      <div id="headlines"></div>
+      <h2 class="mt">Quality control</h2>
+      <div id="qc"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Respondents <span class="hint">most recent 25</span></h2>
+    <div class="tablewrap"><table id="recent"></table></div>
+  </section>
+
+  <section class="panel">
+    <h2>What is in the Excel export</h2>
+    <ul class="sheets">
+      <li><strong>Field summary</strong> — counts, completion rate, mean interview length, quota
+          fill and demand headlines.</li>
+      <li><strong>Responses</strong> — one row per respondent, every question flattened into
+          columns, with answer text alongside codes.</li>
+      <li><strong>Conjoint long</strong> — one row per respondent &times; task &times; alternative
+          with a <code>chosen</code> flag. This is the analysis-ready layout for a conditional or
+          mixed logit model.</li>
+      <li><strong>Screen-outs</strong> — who was terminated, at which question, and why.</li>
+      <li><strong>QC flags</strong> — speeders, attention-check failures, straight-liners,
+          uniform conjoint choosers.</li>
+      <li><strong>Data dictionary</strong> — every question, item, code and scale.</li>
+    </ul>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+<script src="/admin.js"></script>
+</body>
+</html>
