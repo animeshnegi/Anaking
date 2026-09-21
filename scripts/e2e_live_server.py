@@ -148,7 +148,7 @@ print(f"server: {BASE}")
 
 # Start from a clean slate so the expected counts below are deterministic.
 try:
-    reset = call("/admin/reset?token=beacon-admin&scope=all", method="POST")
+    reset = call("/admin/reset?scope=all", method="POST")
     print(f"reset: removed {reset.get('deleted_respondents')} pre-existing record(s)")
 except Exception as e:
     fails.append("pre-test reset failed: " + str(e))
@@ -184,7 +184,7 @@ check("low volume screened out", f6 == "screened_out", str(f6))
 
 # ---------- export verification ----------
 print("\n--- export ---")
-csv = raw("/admin/export.csv?token=beacon-admin")
+csv = raw("/admin/export.csv")
 rows = csv.strip().split("\n")
 header = rows[0].split(",")
 check("CSV has a header row", len(header) > 20, str(len(header)))
@@ -207,7 +207,7 @@ check("complete rows keep their qc_flags in CSV",
       str([(r["respondent_code"], r["qc_flags"]) for r in _co]))
 print(f"    {len(header)} columns, {len(rows)-1} data rows")
 
-js = json.loads(raw("/admin/export.json?token=beacon-admin"))
+js = json.loads(raw("/admin/export.json"))
 check("JSON export returns all respondents", len(js) >= 6, str(len(js)))
 comp = [r for r in js if r["status"] == "complete"]
 check("JSON shows 3 complete respondents", len(comp) == 3, f"{len(comp)} complete")
@@ -220,14 +220,6 @@ check("complete respondents carry 9 conjoint answers",
 first = comp[0]["answers"]
 check("Q12 intent round-tripped", first.get("Q12", {}).get("_") is not None, "")
 check("Q18a price round-tripped", first.get("Q18a", {}).get("_") is not None, "")
-
-# ---------- access control ----------
-print("\n--- access control ---")
-try:
-    raw("/admin/export.csv")
-    check("admin export blocked without token", False, "returned 200 with no token")
-except urllib.error.HTTPError as e:
-    check("admin export blocked without token", e.code == 403, str(e.code))
 
 print("\n" + "=" * 70)
 print(f"{'ALL CHECKS PASSED' if not fails else str(len(fails)) + ' CHECK(S) FAILED: ' + str(fails)}")

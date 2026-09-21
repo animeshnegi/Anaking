@@ -2,10 +2,7 @@
 (function () {
   "use strict";
 
-  // Auth: the browser is signed in via /login (cookie). A ?token= in the URL still works
-  // for bookmarks/scripts and is forwarded on every request when present.
   var PARAMS = new URLSearchParams(location.search);
-  var TOKEN = PARAMS.get("token") || "";
   var STUDY = PARAMS.get("study") || "beacon";
   var scope = "all";
   var $ = function (s) { return document.querySelector(s); };
@@ -14,7 +11,6 @@
     var parts = [];
     if (path.indexOf("study=") < 0) parts.push("study=" + encodeURIComponent(STUDY));
     if (extra) parts.push(extra);
-    if (TOKEN) parts.push("token=" + encodeURIComponent(TOKEN));
     return path + (path.indexOf("?") >= 0 ? "&" : "?") + parts.join("&");
   }
 
@@ -29,14 +25,9 @@
 
   function api(path) {
     return fetch(qs(path), { credentials: "same-origin" }).then(function (r) {
-      if (r.status === 403) { needSignIn(); throw new Error("not signed in"); }
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     });
-  }
-
-  function needSignIn() {
-    location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
   }
 
   function download(path, label, btn) {
@@ -46,7 +37,6 @@
     btn.textContent = "Preparing…";
     // fetch so we can report the real outcome instead of a silent download failure
     fetch(url, { credentials: "same-origin" }).then(function (r) {
-      if (r.status === 403) { needSignIn(); }
       if (!r.ok) throw new Error("HTTP " + r.status);
       var backend = r.headers.get("X-Export-Backend");
       return r.blob().then(function (b) { return { blob: b, backend: backend }; });

@@ -25,8 +25,7 @@ Anaking/
 │   ├── reporting.py    flattening, export sheets, quick analysis
 │   ├── seed.py         seeds the BEACON study from survey_spec + data/design
 │   ├── survey_spec.py  the 24-question BEACON instrument
-│   ├── xlsx_export.py  openpyxl or stdlib .xlsx writer
-│   └── auth.py         @admin_required token guard
+│   └── xlsx_export.py  openpyxl or stdlib .xlsx writer
 ├── templates/
 │   ├── home.html       landing page
 │   ├── survey/         survey.html, not_live.html
@@ -54,7 +53,7 @@ Anaking/
 
 ```bash
 pip install -r requirements.txt
-python3 app.py --port 8000 --admin-token <token>     # add --debug for auto-reload
+python3 app.py --port 8000                           # add --debug for auto-reload
 ```
 
 Three separate apps, each on its own URL (the home page at `/` links to all of them):
@@ -64,27 +63,26 @@ Three separate apps, each on its own URL (the home page at `/` links to all of t
 | **Home** | `/` | Landing page: links to the three apps + list of studies on the server |
 | **Survey** | `/survey/` | Respondent link — the live BEACON survey |
 | | `/survey/test` | Same survey, stored as **test data** (codes T001, T002 …) |
-| | `/survey/<slug>` , `/survey/<slug>/test` | Any study launched from the Studio (`?preview=<token>` for drafts) |
-| **Sign in** | `/login` | Research team enters the admin token **once**; a cookie then unlocks Studio, Admin and draft previews on that browser (`/logout` ends it) |
+| | `/survey/<slug>` , `/survey/<slug>/test` | Any study launched from the Studio (test mode also previews drafts) |
 | **Studio** | `/studio/` (`/studio/#<slug>` opens a study) | Builder — create / edit / launch studies, design the walkthrough, generate conjoint designs, per-study analysis |
 | **Admin** | `/admin/` (`?study=<slug>` picks a study) | Dashboard — live counts, quota fill, QC flags, downloads, reset |
-| | `/admin/export.xlsx\|csv\|json?token=…&study=…&scope=all\|real\|test` | Exports |
+| | `/admin/export.xlsx\|csv\|json?study=…&scope=all\|real\|test` | Exports |
 | | `/healthz` | Liveness check |
 
 Old respondent links (`/test`, `/s/<slug>`) redirect permanently to the new `/survey/…` paths.
 
 Every page header carries the same **Home · Survey · Studio · Admin** switcher, so the team can hop
 between apps without retyping anything. Respondents see none of this — the team strip on the survey
-only renders for a signed-in browser.
+only renders in test mode (`/survey/<slug>/test`), which is also where drafts are previewed; the
+respondent link of a draft or closed study shows a "not launched yet" page instead.
 
-**Admin token.** The default is `beacon-admin`; change it with `ADMIN_TOKEN=…` or
-`--admin-token …` before going live (the server prints it at start-up). Explicit
-`?token=<ADMIN_TOKEN>` (or an `X-Admin-Token` header) still works on every Studio/Admin URL and
-API for scripts and bookmarks — opening such a link also signs the browser in.
+**Access.** There is no sign-in, token or password: Studio, Admin, the APIs and the exports are
+open to anyone who can reach the server. Restrict access at the network or reverse-proxy layer
+(VPN, IP allow-list, HTTP basic auth in nginx/Caddy, …) before exposing the platform publicly.
 
-Configuration (environment variables): `ADMIN_TOKEN`, `PORT`, `HOST`, `DB_PATH`,
-`VOICE_DIR`, `NARRATION_DIR`, `SECRET_KEY`. Defaults put the database in `data/survey.db`,
-respondent recordings in `uploads/voice/` and uploaded narration in `uploads/narration/<study>/`.
+Configuration (environment variables): `PORT`, `HOST`, `DB_PATH`, `VOICE_DIR`, `NARRATION_DIR`,
+`MEDIA_DIR`, `SECRET_KEY`. Defaults put the database in `data/survey.db`, respondent recordings in
+`uploads/voice/` and uploaded narration in `uploads/narration/<study>/`.
 
 ### Studio workspace (Studio → Questions)
 

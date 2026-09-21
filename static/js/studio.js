@@ -3,10 +3,6 @@
    Every edit writes straight into the study and is autosaved a moment later. */
 (function () {
   "use strict";
-  // Auth: signed-in session cookie (see /login). A ?token= in the URL is still honoured
-  // for bookmarks and is appended to every request when present.
-  var TOKEN = (location.search.match(/token=([^&]+)/) || [])[1] || "";
-  var TQ = TOKEN ? "&token=" + encodeURIComponent(TOKEN) : "";     // query-string suffix
   var root = document.getElementById("st-root");
   var cur = null;          // {slug,title,status,cfg}
   var tab = "questions";
@@ -14,19 +10,13 @@
   var studies = [];        // dashboard cache
   var Q = window.BeaconQ;
 
-  function needSignIn() {
-    location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search + location.hash);
-  }
   function api(path, body) {
-    return fetch(path + (TQ ? (path.indexOf("?") < 0 ? "?" : "&") + TQ.slice(1) : ""), {
+    return fetch(path, {
       method: body ? "POST" : "GET",
       credentials: "same-origin",
       headers: body ? { "Content-Type": "application/json" } : {},
       body: body ? JSON.stringify(body) : undefined
-    }).then(function (r) {
-      if (r.status === 403) { needSignIn(); throw new Error("not signed in"); }
-      return r.json();
-    });
+    }).then(function (r) { return r.json(); });
   }
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -200,7 +190,7 @@
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden" && cur && auto.dirty && navigator.sendBeacon) {
       var blob = new Blob([JSON.stringify({ slug: cur.slug, title: cur.title, cfg: cur.cfg })], { type: "application/json" });
-      if (navigator.sendBeacon("/api/studio/save?" + (TQ ? TQ.slice(1) : "_=1"), blob)) { auto.dirty = false; auto.lastSaved = new Date(); renderSaveState(); }
+      if (navigator.sendBeacon("/api/studio/save", blob)) { auto.dirty = false; auto.lastSaved = new Date(); renderSaveState(); }
     }
   });
   window.addEventListener("keydown", function (e) {
@@ -244,7 +234,7 @@
         '<div class="st-stat-bar"><i style="width:' + pct + '%"></i></div><span class="st-meta">' + pct + "% completion</span></div>" +
         '<div class="st-card-actions">' +
         '<button class="st-btn on" data-act="open" data-slug="' + esc(s.slug) + '">Open builder</button>' +
-        '<a class="st-btn" href="/survey/' + esc(s.slug) + '/test' + (TOKEN ? "?preview=" + encodeURIComponent(TOKEN) : "") + '" target="_blank" rel="noopener">Preview</a>' +
+        '<a class="st-btn" href="/survey/' + esc(s.slug) + '/test" target="_blank" rel="noopener">Preview</a>' +
         (s.status === "live"
           ? '<button class="st-btn bad" data-act="status" data-status="closed" data-slug="' + esc(s.slug) + '">Close</button>'
           : '<button class="st-btn good" data-act="status" data-status="live" data-slug="' + esc(s.slug) + '">Launch</button>') +
@@ -891,7 +881,7 @@
   function uploadMedia(file, cb) {
     var fd = new FormData(); fd.append("file", file, file.name);
     toast("Uploading " + file.name + "\u2026");
-    fetch("/api/studio/media?study=" + encodeURIComponent(cur.slug) + TQ, { method: "POST", body: fd, credentials: "same-origin" })
+    fetch("/api/studio/media?study=" + encodeURIComponent(cur.slug), { method: "POST", body: fd, credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (r) { if (r.error) { toast("Upload failed: " + r.error); return; } cb(r); })
       .catch(function () { toast("Upload failed"); });
@@ -1159,7 +1149,7 @@
     var sc = scenes()[i]; if (!sc) return;
     var fd = new FormData(); fd.append("file", file, file.name);
     toast("Uploading " + file.name + "\u2026");
-    fetch("/api/studio/narration?study=" + encodeURIComponent(cur.slug) + TQ, { method: "POST", body: fd, credentials: "same-origin" })
+    fetch("/api/studio/narration?study=" + encodeURIComponent(cur.slug), { method: "POST", body: fd, credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (r) {
         if (r.error) { toast("Upload failed: " + r.error); return; }
@@ -1300,12 +1290,12 @@
   function responsesTab(p) {
     api("/api/admin/data?study=" + encodeURIComponent(cur.slug) + "&scope=all")
       .then(function (d) {
-        var html = '<div class="st-page-head"><h2>Responses</h2><p>Everyone who has started this study, with their QC flags. Full dashboards live in <a href="/admin/?study=' + esc(cur.slug) + (TOKEN ? "&token=" + encodeURIComponent(TOKEN) : "") + '">Admin</a>.</p></div>' +
+        var html = '<div class="st-page-head"><h2>Responses</h2><p>Everyone who has started this study, with their QC flags. Full dashboards live in <a href="/admin/?study=' + esc(cur.slug) + '">Admin</a>.</p></div>' +
           '<div class="st-kpis">' + kpi(d.counts.total, "started") + kpi(d.counts.complete, "complete") + kpi(d.counts.screened_out, "screened out") + kpi(d.counts.in_progress, "in progress") + "</div>" +
           '<div class="st-row" style="margin-bottom:12px">' +
-          '<a class="st-btn" href="/admin/export.xlsx?study=' + cur.slug + "&scope=all" + TQ + '">Excel (all)</a>' +
-          '<a class="st-btn" href="/admin/export.csv?study=' + cur.slug + "&scope=all" + TQ + '">CSV</a>' +
-          '<a class="st-btn" href="/admin/export.json?study=' + cur.slug + "&scope=all" + TQ + '">JSON</a>' +
+          '<a class="st-btn" href="/admin/export.xlsx?study=' + cur.slug + '&scope=all">Excel (all)</a>' +
+          '<a class="st-btn" href="/admin/export.csv?study=' + cur.slug + '&scope=all">CSV</a>' +
+          '<a class="st-btn" href="/admin/export.json?study=' + cur.slug + '&scope=all">JSON</a>' +
           '<span style="flex:1"></span>' +
           '<button class="st-btn bad" data-act="reset" data-scope="test">Reset test data</button>' +
           '<button class="st-btn bad" data-act="reset" data-scope="all">Reset all</button></div>' +
@@ -1318,7 +1308,7 @@
     function kpi(v, l) { return '<div class="st-kpi"><strong>' + v + "</strong><span>" + l + "</span></div>"; }
   }
   function analysisTab(p) {
-    fetch("/api/studio/analysis?study=" + encodeURIComponent(cur.slug) + TQ, { credentials: "same-origin" })
+    fetch("/api/studio/analysis?study=" + encodeURIComponent(cur.slug), { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (a) {
         var html = '<div class="st-page-head"><h2>Analysis</h2><p>Quick aggregates over completed responses.</p></div><div class="st-kpis">' +
@@ -1414,7 +1404,7 @@
     if (act === "save") { if (tab === "settings" || tab === "conjoint") readSettings(); auto.dirty = true; flushSave(function () { toast("Saved"); }); }
     if (act === "viewlive") {
       var w = window.open("", "_blank");
-      var url = "/survey/" + cur.slug + "/test" + (TOKEN ? "?preview=" + encodeURIComponent(TOKEN) : "");
+      var url = "/survey/" + cur.slug + "/test";
       flushSave(function () { if (w) w.location = url; else window.open(url, "_blank"); });
     }
     if (act === "addsec") {
@@ -1500,7 +1490,7 @@
     }
     if (act === "reset") {
       if (confirm("Reset " + b.getAttribute("data-scope") + " responses for /" + cur.slug + "?")) {
-        fetch("/admin/reset?study=" + cur.slug + "&scope=" + b.getAttribute("data-scope") + TQ, { method: "POST", credentials: "same-origin" })
+        fetch("/admin/reset?study=" + cur.slug + "&scope=" + b.getAttribute("data-scope"), { method: "POST", credentials: "same-origin" })
           .then(function (r) { return r.json(); })
           .then(function (r) { toast("Deleted " + r.deleted_respondents); responsesTab($("#st-panel .st-panel")); });
       }

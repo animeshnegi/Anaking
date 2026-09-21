@@ -16,12 +16,10 @@ import json
 import os
 import random
 import sys
-import urllib.error
 import urllib.request
 import zipfile
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
-TOKEN = "beacon-admin"
 random.seed(7)
 
 fails = []
@@ -129,12 +127,12 @@ s_t2, _ = run_one(is_test=True)
 check("second test respondent increments (T001 -> T002)",
       s_t2["respondent_code"] != s_t["respondent_code"], s_t2["respondent_code"])
 
-data = call(f"/api/admin/data?scope=test&token={TOKEN}")
+data = call("/api/admin/data?scope=test")
 check("scope=test returns only test respondents",
       data["counts"]["total"] >= 2 and all(r["is_test"] for r in data["recent"]),
       str(data["counts"]))
 
-data_real = call(f"/api/admin/data?scope=real&token={TOKEN}")
+data_real = call("/api/admin/data?scope=real")
 check("scope=real excludes test respondents",
       all(not r["is_test"] for r in data_real["recent"]), str(data_real["counts"]))
 
@@ -148,7 +146,7 @@ check("non-mapped code is not from the pre-built map",
 
 # ---------------------------------------------------------------- Excel export
 print("\n--- Excel export ---")
-raw, hdrs = get_bytes(f"/admin/export.xlsx?scope=all&token={TOKEN}")
+raw, hdrs = get_bytes("/admin/export.xlsx?scope=all")
 check("xlsx response is a zip container", raw[:2] == b"PK", raw[:8].hex())
 check("content-type is xlsx",
       "spreadsheetml" in hdrs.get("Content-Type", ""), hdrs.get("Content-Type", ""))
@@ -169,7 +167,7 @@ check("all six sheets present", expected.issubset(set(wb.sheetnames)), str(wb.sh
 ws = wb["Responses"]
 hdr = [c.value for c in ws[1]]
 check("Responses sheet has a header row", len(hdr) > 30, str(len(hdr)))
-all_data = call(f"/api/admin/data?scope=all&token={TOKEN}")
+all_data = call("/api/admin/data?scope=all")
 check("Responses has one row per respondent", ws.max_row - 1 == all_data["counts"]["total"],
       f"{ws.max_row - 1} rows vs {all_data['counts']['total']} respondents")
 check("Responses includes is_test column", "is_test" in hdr, "")
@@ -213,13 +211,13 @@ check("Field summary reports top-2-box intent",
       any("Top-2-box" in str(k) for k in fs_rows), str(list(fs_rows)[:12]))
 
 # scope-filtered export must not contain the other scope
-raw_test, _ = get_bytes(f"/admin/export.xlsx?scope=test&token={TOKEN}")
+raw_test, _ = get_bytes("/admin/export.xlsx?scope=test")
 wb_t = load_workbook(io.BytesIO(raw_test))
 codes_t = [r[0] for r in wb_t["Responses"].iter_rows(min_row=2, values_only=True) if r[0]]
 check("scope=test xlsx contains only T codes",
       codes_t and all(str(c).startswith("T") for c in codes_t), str(codes_t))
 
-raw_real, _ = get_bytes(f"/admin/export.xlsx?scope=real&token={TOKEN}")
+raw_real, _ = get_bytes("/admin/export.xlsx?scope=real")
 wb_r = load_workbook(io.BytesIO(raw_real))
 codes_r = [r[0] for r in wb_r["Responses"].iter_rows(min_row=2, values_only=True) if r[0]]
 check("scope=real xlsx contains only R codes",
@@ -247,15 +245,15 @@ check("fallback handles empty cells", wb2["One"]["B3"].value is None, "")
 
 # ---------------------------------------------------------------- reset
 print("\n--- reset ---")
-before = call(f"/api/admin/data?scope=test&token={TOKEN}")["counts"]["total"]
-res = call(f"/admin/reset?scope=test&token={TOKEN}", method="POST")
+before = call("/api/admin/data?scope=test")["counts"]["total"]
+res = call("/admin/reset?scope=test", method="POST")
 check("reset returns ok", res.get("ok") is True, str(res))
 check("reset reports the number deleted", res.get("deleted_respondents", 0) == before,
       f"deleted {res.get('deleted_respondents')}, expected {before}")
-after = call(f"/api/admin/data?scope=test&token={TOKEN}")["counts"]["total"]
+after = call("/api/admin/data?scope=test")["counts"]["total"]
 check("test respondents cleared", after == 0, str(after))
 check("real respondents survive a test reset",
-      call(f"/api/admin/data?scope=real&token={TOKEN}")["counts"]["total"] ==
+      call("/api/admin/data?scope=real")["counts"]["total"] ==
       data_real["counts"]["total"], "")
 
 # codes must restart cleanly after a reset (this is what makes the link reusable)
@@ -263,16 +261,9 @@ s_new, _ = run_one(is_test=True)
 check("test codes restart at T001 after reset", s_new["respondent_code"] == "T001",
       s_new["respondent_code"])
 
-# reset without a token must be refused
-try:
-    call("/admin/reset?scope=test", method="POST")
-    check("reset blocked without token", False, "returned 200")
-except urllib.error.HTTPError as e:
-    check("reset blocked without token", e.code == 403, str(e.code))
-
 # clean up the test data this suite created
-call(f"/admin/reset?scope=test&token={TOKEN}", method="POST")
-final = call(f"/api/admin/data?scope=all&token={TOKEN}")
+call("/admin/reset?scope=test", method="POST")
+final = call("/api/admin/data?scope=all")
 check("after cleanup, no test respondents remain",
       all(not r["is_test"] for r in final["recent"]), str(final["counts"]))
 

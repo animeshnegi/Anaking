@@ -15,12 +15,12 @@
   </div>
   {% with active='survey', nav_study=slug %}{% include '_nav.html' %}{% endwith %}
 </header>
-<main class="login-main">
-  <div class="login-card">
+<main class="panel-main">
+  <div class="panel-card">
     <h1>This study has not been launched yet.</h1>
     <p>The research team must set it live from the Studio before respondents can take part.</p>
-    <p>Part of the team? <a href="/login?next={{ request.full_path.rstrip('?') | urlencode }}">Sign in</a>
-       to preview the draft, or open it in the <a href="/studio/#{{ slug }}">Studio</a>.</p>
+    <p>Part of the team? <a href="/survey/{{ slug }}/test">Preview it in test mode</a>
+       or open it in the <a href="/studio/#{{ slug }}">Studio</a>.</p>
   </div>
 </main>
 </body>

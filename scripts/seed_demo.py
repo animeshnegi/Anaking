@@ -15,7 +15,6 @@ import sys
 import urllib.request
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
-TOKEN = "beacon-admin"
 KEEP = "--keep" in sys.argv
 random.seed(11)
 
@@ -122,7 +121,7 @@ for label, style in PROFILES:
         print(f"  {s['respondent_code']}  complete      ({label})")
 
 print("\nDownloading sample workbook...")
-blob = call(f"/admin/export.xlsx?token={TOKEN}&scope=all")
+blob = call("/admin/export.xlsx?scope=all")
 import os
 out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                    "study_design", "BEACON_sample_export.xlsx")
@@ -131,7 +130,7 @@ with open(out, "wb") as f:
 print(f"  wrote {out} ({len(blob):,} bytes)")
 
 if not KEEP:
-    r = json.loads(call(f"/admin/reset?token={TOKEN}&scope=test", method="POST"))
+    r = json.loads(call("/admin/reset?scope=test", method="POST"))
     print(f"\nCleared {r['deleted_respondents']} demo record(s). "
           "Re-run with --keep to leave them in place.")
 else:

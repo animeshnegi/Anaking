@@ -6,13 +6,15 @@
 <title>PROJECT BEACON — US Oncologist Brand Demand Study</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/explainer.css') }}?v=260910f">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/survey.css') }}?v=260910f">
-{% if signed_in %}<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260910f">{% endif %}
+{% if is_test %}<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260910f">{% endif %}
 </head>
 <body>
-{% if signed_in %}
+{#- Test mode is the research team's view (drafts are previewed here too); the respondent
+    link renders no team chrome at all. -#}
+{% if is_test %}
 <div class="teambar">
   <span class="teambar-note">Research-team view &middot; <strong>{{ study_title }}</strong>
-    &middot; {{ 'draft preview' if is_draft else ('test mode - stored as T-codes' if is_test else 'LIVE - answers are stored as real data') }}</span>
+    &middot; {{ 'draft preview' if is_draft else 'test mode - stored as T-codes' }}</span>
   {% with active='survey', nav_study=slug, survey_href=request.path %}{% include '_nav.html' %}{% endwith %}
 </div>
 {% endif %}

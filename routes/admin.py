@@ -1,5 +1,5 @@
 """
-ADMIN  -  live dashboard, exports and resets (token protected: ?token=<ADMIN_TOKEN>).
+ADMIN  -  live dashboard, exports and resets.
 
 Page
     GET  /admin/                           dashboard UI
@@ -23,7 +23,6 @@ from flask import (Blueprint, Response, current_app, jsonify, render_template,
                    send_from_directory)
 
 from core import xlsx_export
-from core.auth import admin_required
 from core.qc import qc_flags
 from core.reporting import build_sheets
 from models import Respondent, Study, StudyError
@@ -34,13 +33,11 @@ bp = Blueprint("admin", __name__)
 
 
 @bp.get("/admin/")
-@admin_required("page")
 def page():
     return render_template("admin/dashboard.html")
 
 
 @bp.get("/api/admin/data")
-@admin_required()
 def data():
     slug, scope = study_arg(), scope_arg()
     cfg = Study.cfg_of(slug)
@@ -86,12 +83,10 @@ def data():
             "screen_out": r["screen_out_at"] or "", "flags": flags(r),
         } for r in recs[-25:]][::-1],
         "conjoint": {"n_tasks": (cfg.get("conjoint") or {}).get("n_tasks", 0)},
-        "token": current_app.config["ADMIN_TOKEN"],
     })
 
 
 @bp.post("/admin/reset")
-@admin_required()
 def reset():
     slug, scope = study_arg(), scope_arg("test")
     try:
@@ -102,7 +97,6 @@ def reset():
 
 
 @bp.get("/admin/export.xlsx")
-@admin_required("text")
 def export_xlsx():
     slug, scope = study_arg(), scope_arg()
     sheets = build_sheets(records(slug, scope), scope, Study.cfg_of(slug))
@@ -113,7 +107,6 @@ def export_xlsx():
 
 
 @bp.get("/admin/export.csv")
-@admin_required("text")
 def export_csv():
     slug, scope = study_arg(), scope_arg()
     flat = [r["flat"] for r in records(slug, scope)]
@@ -133,7 +126,6 @@ def export_csv():
 
 
 @bp.get("/admin/export.json")
-@admin_required("text")
 def export_json():
     slug, scope = study_arg(), scope_arg()
     out = [{k: v for k, v in r.items() if k != "flat"} for r in records(slug, scope)]
@@ -142,7 +134,6 @@ def export_json():
 
 
 @bp.get("/admin/voice/<path:name>")
-@admin_required("text")
 def voice(name):
     name = os.path.basename(name)
     ctype = ("audio/mp4" if name.endswith((".m4a", ".mp4"))
