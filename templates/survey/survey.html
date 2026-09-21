@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PROJECT BEACON — US Oncologist Brand Demand Study</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/explainer.css') }}?v=260921d">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/survey.css') }}?v=260921d">
-{% if is_test %}<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260921d">{% endif %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/explainer.css') }}?v=260921e">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/survey.css') }}?v=260921e">
+{% if is_test %}<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260921e">{% endif %}
 </head>
 <body>
 {#- Test mode is the research team's view (drafts are previewed here too); the respondent
@@ -152,8 +152,8 @@ window.__beaconEscape = function () {
 };
 </script>
 <script>window.STUDY={slug:{{ slug|tojson }}};</script>
-<script src="{{ url_for('static', filename='js/qlogic.js') }}?v=260921d"></script>
-<script src="{{ url_for('static', filename='js/explainer.js') }}?v=260921d"></script>
-<script src="{{ url_for('static', filename='js/survey.js') }}?v=260921d"></script>
+<script src="{{ url_for('static', filename='js/qlogic.js') }}?v=260921e"></script>
+<script src="{{ url_for('static', filename='js/explainer.js') }}?v=260921e"></script>
+<script src="{{ url_for('static', filename='js/survey.js') }}?v=260921e"></script>
 </body>
 </html>

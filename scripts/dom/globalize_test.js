@@ -109,6 +109,23 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     $(".st-lang-row") ? $(".st-lang-row").textContent : "none");
   $('[data-act="modal-close"]').click(); await sleep(20);
 
+  // --- English (UK) child: own SURVEY OPTIONS menu + offline AI localisation
+  $('[data-act="sopts"]').click(); await sleep(20);
+  $('[data-act="so-global"]').click(); await sleep(1200);
+  const selGB = $("#lang-add-sel"); selGB.value = "en-GB"; fire(selGB, "change");
+  $('[data-act="lang-add"]').click(); await sleep(1600);
+  check("child editor carries its own SURVEY OPTIONS button", !!$('[data-act="sopts"]'));
+  $('[data-act="sopts"]').click(); await sleep(20);
+  const wordBtn = $('[data-act="so-word"]');
+  check("Download Word Outline reachable from the child editor",
+    !!wordBtn && wordBtn && !wordBtn.closest(".st-menu").hidden);
+  $('[data-act="sopts"]').click(); await sleep(20);
+  $('[data-act="lang-ai"]').click(); await sleep(2500);
+  const gb = JSON.parse(await get("/api/studio/strings?study=" + slug + "--en-gb&lang=en-GB"));
+  check("AI-translate fills the English (UK) child without any network",
+    gb.coverage.translated === gb.coverage.total, JSON.stringify(gb.coverage).slice(0, 140));
+  $('[data-act="child-open-parent"]').click(); await sleep(1000);
+
   // --- library: grouped add-item picker with every reference entry
   $('[data-act="qadd"]').click(); await sleep(30);
   const groups = $$(".st-type-group").map(g => g.textContent.trim());
@@ -197,7 +214,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   check("child survey welcome renders the Spanish copy", $2("#welcome h1").textContent === "Bienvenido", $2("#welcome h1").textContent);
   const pick = $2("#lang-pick select");
   check("language picker lists the whole family with native names",
-    !!pick && [...pick.options].map(o => o.value).join("|") === "en-US|es" && /Español/.test(pick.textContent),
+    !!pick && [...pick.options].map(o => o.value).join("|") === "en-US|en-GB|es" && /Español/.test(pick.textContent),
     pick ? [...pick.options].map(o => o.value).join("|") : "no picker");
   w2.document.querySelector("#start-btn").click(); await sleep(500);
   check("first question renders translated", /Elige uno/.test($2("#app .card").textContent), $2("#app .card").textContent.slice(0, 120));
@@ -210,6 +227,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   check("no JS errors in studio or survey", errs.length === 0 && errs2.length === 0, errs.concat(errs2).join("; "));
 
   await req("POST", "/api/studio/delete", JSON.stringify({ slug: childSlug }));
+  await req("POST", "/api/studio/delete", JSON.stringify({ slug: slug + "--en-gb" }));
   await req("POST", "/api/studio/delete", JSON.stringify({ slug }));
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error("ERR", e); process.exit(1); });

@@ -530,7 +530,8 @@
       api("/api/studio/autotranslate", { slug: aiSlug, lang: lg }).then(function (r) {
         if (r.error) { toast("AI translate failed: " + r.error); refreshLangPanel(); return; }
         var nf = Object.keys(r.failed || {}).length;
-        toast("AI translated " + r.translated + " string(s)" + (nf ? " \u00B7 " + nf + " could not be translated - finish them by hand" : ""));
+        if (!r.translated && nf) toast("Machine translation could not be reached right now - " + nf + " string(s) left for manual translation below.");
+        else toast("AI translated " + r.translated + " string(s)" + (nf ? " \u00B7 " + nf + " could not be translated - finish them by hand" : ""));
         syncTranslationsFromServer(function () {
           if (cur.cfg.parent) {
             api("/api/studio/strings?study=" + encodeURIComponent(cur.slug)).then(function (d) {
@@ -623,8 +624,15 @@
       '<input type="text" id="ed-title" class="st-title" value="' + esc(cur.title) + '" title="Child survey title">' +
       '<div id="st-savestate" class="st-savestate"></div>' +
       '<span class="st-child-note">Child of <b>' + esc(cur.cfg.parent) + "</b> \u00B7 " + esc(meta.native) + " \u2014 questions update with the parent</span>" +
-      '<button class="st-btn" data-act="child-open-parent">Open parent</button>' +
-      '<button class="st-btn play" data-act="viewlive">\u25B6 Preview translation</button>' +
+      '<a class="st-btn play" href="/survey/' + esc(cur.slug) + '/test" target="_blank" rel="noopener">\u25B6 Preview translation</a>' +
+      '<div class="st-menu-wrap"><button class="st-btn" data-act="sopts" title="Survey options">SURVEY OPTIONS \u25BE</button>' +
+        '<div class="st-menu" id="st-sopts" hidden>' +
+        '<button type="button" data-act="so-word">Download Word Outline</button>' +
+        '<button type="button" data-act="so-share">Share survey preview</button>' +
+        '<button type="button" data-act="copylink">Copy respondent link</button>' +
+        '<button type="button" data-act="child-open-parent">Open parent survey</button>' +
+        "</div></div>" +
+      '<button class="st-btn" data-act="child-open-parent">\u2190 Parent</button>' +
       "</div>" +
       '<nav class="st-tabs"><button class="st-tab on">Translation</button></nav>' +
       '<div id="st-panel" class="st-panel-host"><div class="st-page"><div class="st-panel">' +
@@ -1883,7 +1891,22 @@
     if (act === "so-share") { closeSopts(); shareModal(); }
     if (act === "so-move") { closeSopts(); moveStudy(); }
     if (act === "so-dup") { closeSopts(); dupCurrent(false); }
-    if (act === "so-word") { closeSopts(); flushSave(function () { location.href = "/api/studio/outline.docx?study=" + encodeURIComponent(cur.slug); }); }
+    if (act === "so-word") { closeSopts(); flushSave(function () {
+      var url = "/api/studio/outline.docx?study=" + encodeURIComponent(cur.slug);
+      // inside the preview iframe a location.href download is swallowed - fetch the
+      // file and save it through a blob anchor instead (new tab as fallback)
+      fetch(url).then(function (r) {
+        if (!r.ok) throw new Error("http " + r.status);
+        return r.blob();
+      }).then(function (bl) {
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(bl);
+        a.download = cur.slug + "_outline.docx";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+        toast("Word outline downloaded - check your browser downloads.");
+      }).catch(function () { window.open(url, "_blank"); });
+    }); }
     if (act === "so-track") { closeSopts(); if (confirm("Go live? Anyone with the respondent link can start answering.")) setStatus(cur.slug, "live"); }
     if (act === "so-duptr") { closeSopts(); dupCurrent(true); }
     if (act === "so-global") { closeSopts(); flushSave(openLangPanel); }

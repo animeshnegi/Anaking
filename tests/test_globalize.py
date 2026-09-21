@@ -333,6 +333,27 @@ def test_child_surveys_follow_the_parent(client):
     assert client.get("/api/spec/par--es").status_code == 404
 
 
+def test_offline_english_variant_localization():
+    from core.translator import machine_translate
+    assert machine_translate("Organize the color and analyze the center.", "en-GB") == \
+        "Organise the colour and analyse the centre."
+    assert machine_translate("What size is it? Realize the prize.", "en-GB") == \
+        "What size is it? Realise the prize."
+    assert machine_translate("The labor was humorous and honorary.", "en-GB") == \
+        "The labour was humorous and honorary."
+
+
+def test_autotranslate_english_child_works_offline(client):
+    _save(client, GLOBAL_CFG, slug="par2", title="Parent Two")
+    r = client.post("/api/studio/globalize", json={"slug": "par2", "lang": "en-GB"}).get_json()
+    assert r["ok"] and r["slug"] == "par2--en-gb"
+    d = client.post("/api/studio/autotranslate",
+                    json={"slug": "par2--en-gb", "lang": "en-GB"}).get_json()
+    assert d["ok"] and d["translated"] > 0 and not d["failed"]
+    sp = client.get("/api/spec/par2--en-gb").get_json()
+    assert sp["render_language"] == "en-GB"
+
+
 def test_spec_exposes_new_flow_objects(client):
     _save(client, NEW_TYPES_CFG, slug="new-types", title="New types")
     spec = client.get("/api/spec/new-types").get_json()
