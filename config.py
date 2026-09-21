@@ -15,9 +15,6 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-in-production")
 
-    # Shared secret for the Studio builder and the admin dashboard (?token=...).
-    ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "beacon-admin")
-
     # SQLite database holding studies, respondents and answers.
     DB_PATH = os.environ.get("DB_PATH", os.path.join(DATA_DIR, "survey.db"))
 
@@ -39,11 +36,6 @@ class Config:
     # Largest accepted request body (voice clips are base64, capped at ~2.5 MB raw).
     MAX_CONTENT_LENGTH = 12 * 1024 * 1024
 
-    # Admin sign-in cookie (set on /login) - 30 days, HTTP-only, same-site.
-    PERMANENT_SESSION_LIFETIME = 30 * 24 * 3600
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = "Lax"
-
     SEND_FILE_MAX_AGE_DEFAULT = 3600
     JSON_SORT_KEYS = False
 
@@ -58,7 +50,6 @@ class ProductionConfig(Config):
 
 class TestingConfig(Config):
     TESTING = True
-    ADMIN_TOKEN = "test-token"
 
 
 CONFIGS = {

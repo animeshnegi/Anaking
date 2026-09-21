@@ -16,17 +16,20 @@ Anaking/
 ├── models.py           SQLite schema/migrations + Study / Respondent / Answer models
 ├── routes/             one file per app, each mounted on its own URL
 │   ├── home.py         /            landing page + legacy redirects
-│   ├── survey.py       /survey/…    respondent survey + /api/*
-│   ├── studio.py       /studio/     survey builder      + /api/studio/*
+│   ├── survey.py       /survey/…    respondent survey + /api/* (incl. /api/check_text)
+│   ├── studio.py       /studio/     survey builder      + /api/studio/* (translate, move, outline)
 │   └── admin.py        /admin/      dashboard, exports  + /api/admin/*
 ├── core/               domain logic (no Flask routes in here)
 │   ├── conjoint.py     balanced design generator + per-respondent randomisation
-│   ├── qc.py           speeder / attention / straight-line / gibberish flags
+│   ├── qc.py           speeder / attention / straight-line / verbatim-quality flags
+│   ├── ai_detect.py    AI-generated & pasted answer detection + proofreading notes
+│   ├── i18n.py         language catalogue + extraction/merge of respondent-visible strings
+│   ├── translator.py   keyless machine translation (tag-safe), injectable for tests
+│   ├── outline.py      "Download Word Outline" - stdlib .docx questionnaire outline
 │   ├── reporting.py    flattening, export sheets, quick analysis
 │   ├── seed.py         seeds the BEACON study from survey_spec + data/design
 │   ├── survey_spec.py  the 24-question BEACON instrument
-│   ├── xlsx_export.py  openpyxl or stdlib .xlsx writer
-│   └── auth.py         @admin_required token guard
+│   └── xlsx_export.py  openpyxl or stdlib .xlsx writer
 ├── templates/
 │   ├── home.html       landing page
 │   ├── survey/         survey.html, not_live.html
@@ -54,7 +57,7 @@ Anaking/
 
 ```bash
 pip install -r requirements.txt
-python3 app.py --port 8000 --admin-token <token>     # add --debug for auto-reload
+python3 app.py --port 8000                           # add --debug for auto-reload
 ```
 
 Three separate apps, each on its own URL (the home page at `/` links to all of them):
@@ -64,27 +67,26 @@ Three separate apps, each on its own URL (the home page at `/` links to all of t
 | **Home** | `/` | Landing page: links to the three apps + list of studies on the server |
 | **Survey** | `/survey/` | Respondent link — the live BEACON survey |
 | | `/survey/test` | Same survey, stored as **test data** (codes T001, T002 …) |
-| | `/survey/<slug>` , `/survey/<slug>/test` | Any study launched from the Studio (`?preview=<token>` for drafts) |
-| **Sign in** | `/login` | Research team enters the admin token **once**; a cookie then unlocks Studio, Admin and draft previews on that browser (`/logout` ends it) |
+| | `/survey/<slug>` , `/survey/<slug>/test` | Any study launched from the Studio (test mode also previews drafts) |
 | **Studio** | `/studio/` (`/studio/#<slug>` opens a study) | Builder — create / edit / launch studies, design the walkthrough, generate conjoint designs, per-study analysis |
-| **Admin** | `/admin/` (`?study=<slug>` picks a study) | Dashboard — live counts, quota fill, QC flags, downloads, reset |
-| | `/admin/export.xlsx\|csv\|json?token=…&study=…&scope=all\|real\|test` | Exports |
+| **Admin** | `/admin/` (`?study=<slug>` picks a study) | Dashboard — live counts, quota fill, QC flags, written-answer AI review, downloads, reset |
+| | `/admin/export.xlsx\|csv\|json?study=…&scope=all\|real\|test` | Exports |
 | | `/healthz` | Liveness check |
 
 Old respondent links (`/test`, `/s/<slug>`) redirect permanently to the new `/survey/…` paths.
 
 Every page header carries the same **Home · Survey · Studio · Admin** switcher, so the team can hop
 between apps without retyping anything. Respondents see none of this — the team strip on the survey
-only renders for a signed-in browser.
+only renders in test mode (`/survey/<slug>/test`), which is also where drafts are previewed; the
+respondent link of a draft or closed study shows a "not launched yet" page instead.
 
-**Admin token.** The default is `beacon-admin`; change it with `ADMIN_TOKEN=…` or
-`--admin-token …` before going live (the server prints it at start-up). Explicit
-`?token=<ADMIN_TOKEN>` (or an `X-Admin-Token` header) still works on every Studio/Admin URL and
-API for scripts and bookmarks — opening such a link also signs the browser in.
+**Access.** There is no sign-in, token or password: Studio, Admin, the APIs and the exports are
+open to anyone who can reach the server. Restrict access at the network or reverse-proxy layer
+(VPN, IP allow-list, HTTP basic auth in nginx/Caddy, …) before exposing the platform publicly.
 
-Configuration (environment variables): `ADMIN_TOKEN`, `PORT`, `HOST`, `DB_PATH`,
-`VOICE_DIR`, `NARRATION_DIR`, `SECRET_KEY`. Defaults put the database in `data/survey.db`,
-respondent recordings in `uploads/voice/` and uploaded narration in `uploads/narration/<study>/`.
+Configuration (environment variables): `PORT`, `HOST`, `DB_PATH`, `VOICE_DIR`, `NARRATION_DIR`,
+`MEDIA_DIR`, `SECRET_KEY`. Defaults put the database in `data/survey.db`, respondent recordings in
+`uploads/voice/` and uploaded narration in `uploads/narration/<study>/`.
 
 ### Studio workspace (Studio → Questions)
 
@@ -117,6 +119,104 @@ The plain-text `stem` is kept in step with the rich `stem_html` for exports, nar
 `static/css/preview-skin.css` is generated from `survey.css` by
 `python3 scripts/build_preview_skin.py` (re-run after changing survey styles).
 
+### Survey options & globalisation (Studio bar → SURVEY OPTIONS)
+
+The builder bar carries the full **SURVEY OPTIONS** menu: **Settings**, **Share survey
+preview** (test + respondent links, copy button), **Move survey…** (new slug - uploaded
+media and narration travel with it), **Duplicate**, **Download Word Outline** (a real
+`.docx` of the questionnaire, in any language, written with the standard library only),
+**Start Tracking** (go live), **Duplicate & Translate…** (copy the study and jump straight
+into its translation panel), **Globalize Survey…**, **Edit title and language…** and
+**Delete survey**.
+
+**Globalisation.** A study is authored in its default language (**English US** unless
+changed in *Edit title and language*) and can be translated into any of the ~36 approved
+field languages (`core/i18n.py`). Only **respondent-visible** strings are extractable -
+question stems and rich text, help text, placeholders, option / row / column labels,
+scale labels, section titles, the welcome & thank-you pages, walkthrough scene captions -
+so notes and directions aimed at the research team are *never* offered for translation
+and always stay in the default language. The **Globalize Survey** panel lists each
+language with its coverage bar and offers, per language:
+
+* **manual translation** - a searchable table (context · source · translation, *missing
+  only* filter) that saves through `POST /api/studio/translate`;
+* **AI-translate missing** - server-side machine translation
+  (`core/translator.py`, keyless Google endpoint, tag-safe for rich text) that fills only
+  the gaps and never overwrites manual work; when the network is unavailable every string
+  is reported as failed and simply stays for manual translation.
+
+Respondents pick their language on the welcome page (native names); the choice re-renders
+the survey (`/api/spec/<slug>?lang=es`), RTL languages flip the page direction, missing
+strings fall back to the default language, and each respondent's language is stored and
+exported as a `language` column.
+
+**Survey flow & objects** (also in the add-item library): Welcome Page / Thank You Page
+(copy lives in Settings → *Survey pages & flow*), **Question Page** (new section),
+**Question Loop** (ask one text/number question for a list of items), **Page Randomizer**
+(middle sections shuffle per respondent, seeded by their session) and **Embedded
+Variables** (names captured from the respondent link, e.g. `?panel=A` → exported as
+`ev_panel`).
+
+### The add-item library (Studio → + Add question)
+
+Grouped exactly like a commercial builder: **Questions** - Multiple Choice (incl. image
+options), Grid / Rating Scale, Rank Order, Scale, Text Entry, Numeric Entry, Net Promoter,
+Constant Sum, Numeric Matrix, Date, Delta (before / after / change); **Methodologies** -
+Max Diff experiment, Conjoint, Concept Test, Heatmap; **Survey flow** - Welcome Page,
+Thank You Page, Question Page, Question Loop, Page Randomizer; **Objects** - Embedded
+Variable, Text Block. Every type is fully editable (rows, scales, ranges, labels,
+placeholders, rich text, logic, media, styling) and every answer type flows into the
+flattened exports and the data dictionary.
+
+### Written-answer quality: AI-generated & pasted text (all open-text questions)
+
+Free text is the part of a study most often faked - paste a chatbot answer into the box and
+move on - so **every** free-text answer the study can collect is checked: each `open_text`
+question *and* every "please specify" box. The check is plain Python (`core/ai_detect.py`):
+no model weights, no network call, no new dependency, and it never deletes or blocks data.
+
+Two families of evidence are combined into one 0-100 score:
+
+| Family | Signals |
+|---|---|
+| **Linguistic** | AI self-identification and refusal phrasing ("as an AI language model…"), hallmark vocabulary (*delve, moreover, it is important to note, robust, landscape, streamline*…), markdown / smart-quote artefacts and list-shaped answers, a metronome sentence rhythm, essay-shaped paragraphs, an impersonal register with no contractions, *firstly / secondly / finally* scaffolding, no numbers or specifics from real practice |
+| **Behavioural** | keystrokes, pasted characters, characters per second of active typing, one-shot paste bursts, long tab-switches while "writing" — collected by `static/js/survey.js` and stored with the answer as `_meta` |
+
+Human evidence subtracts (contractions, first person, informal phrasing, concrete numbers,
+mechanical slips), so a rough, first-hand answer cannot be pushed over the line by one stray
+"overall,". Typing also pushes the pasted-character count back down, so a respondent who pastes
+a draft and then rewrites it by hand is not still carrying that paste on their record.
+
+The same scoring runs three times over the same answer, which is what makes the flag defensible:
+
+1. **While the respondent types** — `POST /api/check_text` scores the text as they go. The box
+   shows a chip with the score and the reasons ("AI-typical vocabulary · no contractions"),
+   plus proofreading notes (doubled words, placeholder brackets, run-on sentences, stray
+   markdown). In **confirm** mode they must either rewrite it or press *"I wrote this myself"*
+   before moving on; **warn** mode never holds them up.
+2. **On submit** — a final proofreading step lists every written answer that still looks
+   AI-generated, pasted or broken, with a rewrite box and a re-check button, before the survey
+   is sent. `POST /api/submit` re-scores everything server-side, so a client that skipped the
+   live call is still flagged: `ai_generated_<qid>` (likely), `ai_suspect_<qid>` (possible) and
+   the respondent-level roll-up `ai_generated_verbatim`.
+3. **After the field closes** — Admin → **Written answers** is the review queue: roll-up counts,
+   per-question breakdown, and every answer worst-first with its score, evidence, proofreading
+   notes, paste / keystroke telemetry and cross-respondent duplicates (one AI answer shared
+   round a panel). Filter by question, verdict or text; the same data ships as the
+   **Verbatim AI check** sheet of the Excel export, and per-answer columns
+   (`<qid>_ai_score`, `<qid>_ai_verdict`, `<qid>_ai_confirmed_own_words`, `<qid>_pasted_chars`,
+   `<qid>_keystrokes`) in **Responses**.
+
+Flags raised: `ai_generated_<qid>` (likely) and `ai_suspect_<qid>` (possible), plus a
+respondent-level `ai_generated_verbatim`. Nothing is ever deleted or blocked after the fact - a
+flagged answer stays in the data, marked, so the team can decide what to do with it.
+
+Settings live in Studio → **Settings & quality control** ("Written-answer AI check": what the
+respondent sees, warn-from / flag-from thresholds, and whether every open-text answer or only
+the listed verbatim ids are checked) with a per-question override on each open-text question
+(`ai_check`, `ai_action`). The check is **on by default** for every study, including ones saved
+before it existed.
+
 ### Product walkthrough (Studio → "Walkthrough" tab)
 
 The animated walkthrough respondents see before the survey is an editable list of **scenes**.
@@ -133,6 +233,8 @@ Production: `gunicorn -w 2 -b 0.0.0.0:8000 "app:create_app()"`
 
 ```bash
 python3 -m pytest                               # in-process suite, no server needed
+python3 -m pytest tests/test_ai_detect.py       # AI-answer detection, flags, queue, exports
+python3 -m pytest tests/test_globalize.py       # languages, translation, outline, new question types
 
 python3 app.py &                                # live-server scripts
 python3 scripts/e2e_live_server.py              # full flow, screen-outs, QC flags, exports
@@ -140,6 +242,9 @@ python3 scripts/e2e_reuse_live_server.py        # test/real scopes, xlsx, reset 
 python3 scripts/seed_demo.py                    # 7 demo respondents + sample workbook
 node scripts/dom/studio_workspace_test.js       # Studio workspace: outline/editor/preview, autosave (needs jsdom)
 node scripts/dom/pipe_picker_test.js            # Studio pipe picker (needs jsdom: npm i jsdom)
+node scripts/dom/survey_ai_check_test.js        # respondent AI check: chip, gate, proofreading step
+node scripts/dom/ai_check_team_test.js          # Studio AI settings + Admin review queue
+node scripts/dom/globalize_test.js              # SURVEY OPTIONS menu, library, Globalize panel, language picker
 ```
 
 ## Study design material

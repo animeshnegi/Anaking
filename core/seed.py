@@ -82,7 +82,11 @@ def beacon_config() -> dict:
         },
         "qc": {"attention_q": "Q13", "attention_ok": "2", "min_seconds": 480,
                "straightline_q": "Q7", "uniform_q": "Q16",
-               "verbatim_qs": ["Q8b", "Q20b", "Q19c", "Q20c"]},
+               "verbatim_qs": ["Q8b", "Q20b", "Q19c", "Q20c"],
+               # every open-text answer is checked for AI-generated / pasted text;
+               # "confirm" makes the respondent say the answer is their own before moving on
+               "check_all_text": True,
+               "ai": {"enabled": True, "action": "confirm", "warn_at": 35, "flag_at": 60}},
     }
 
 

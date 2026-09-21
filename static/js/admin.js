@@ -2,10 +2,7 @@
 (function () {
   "use strict";
 
-  // Auth: the browser is signed in via /login (cookie). A ?token= in the URL still works
-  // for bookmarks/scripts and is forwarded on every request when present.
   var PARAMS = new URLSearchParams(location.search);
-  var TOKEN = PARAMS.get("token") || "";
   var STUDY = PARAMS.get("study") || "beacon";
   var scope = "all";
   var $ = function (s) { return document.querySelector(s); };
@@ -14,7 +11,6 @@
     var parts = [];
     if (path.indexOf("study=") < 0) parts.push("study=" + encodeURIComponent(STUDY));
     if (extra) parts.push(extra);
-    if (TOKEN) parts.push("token=" + encodeURIComponent(TOKEN));
     return path + (path.indexOf("?") >= 0 ? "&" : "?") + parts.join("&");
   }
 
@@ -29,14 +25,9 @@
 
   function api(path) {
     return fetch(qs(path), { credentials: "same-origin" }).then(function (r) {
-      if (r.status === 403) { needSignIn(); throw new Error("not signed in"); }
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     });
-  }
-
-  function needSignIn() {
-    location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
   }
 
   function download(path, label, btn) {
@@ -46,7 +37,6 @@
     btn.textContent = "Preparing…";
     // fetch so we can report the real outcome instead of a silent download failure
     fetch(url, { credentials: "same-origin" }).then(function (r) {
-      if (r.status === 403) { needSignIn(); }
       if (!r.ok) throw new Error("HTTP " + r.status);
       var backend = r.headers.get("X-Export-Backend");
       return r.blob().then(function (b) { return { blob: b, backend: backend }; });
@@ -104,6 +94,7 @@
 
   function render(d) {
     $("#generated").textContent = d.generated;
+    if (d.ai_text) renderAiSummary(d.ai_text);
 
     var c = d.counts;
     var rate = c.total ? Math.round(100 * c.complete / c.total) : 0;
@@ -174,6 +165,92 @@
   function load() {
     api("/api/admin/data?scope=" + scope).then(render)
       .catch(function (e) { toast("Could not load admin data: " + e.message, true); });
+    loadVerbatims();
+  }
+
+  // ---- written-answer AI / proofreading queue ----------------------------------------
+  function renderAiSummary(a) {
+    var cards = [
+      ["Written answers scored", a.answers_scored, ""],
+      ["Likely AI-generated", a.likely_ai, a.likely_ai ? "bad" : ""],
+      ["Possible AI-generated", a.possible_ai, a.possible_ai ? "warn" : ""],
+      ["Respondents flagged", a.respondents_flagged, a.respondents_flagged ? "bad" : ""],
+      ["Confirmed \u201cmy own words\u201d", a.confirmed_own_words, ""]
+    ];
+    $("#ai-summary").innerHTML = '<div class="ai-cards">' + cards.map(function (c) {
+      return '<div class="ai-card ' + c[2] + '"><div class="k">' + c[0] +
+        '</div><div class="v">' + c[1] + "</div></div>";
+    }).join("") + "</div>" +
+      '<div class="hint">Thresholds: possible from ' + ((a.settings || {}).warn_at || 35) +
+      ", flagged from " + ((a.settings || {}).flag_at || 60) +
+      " &middot; live action: " + esc((a.settings || {}).action || "confirm") + "</div>";
+  }
+
+  function esc(t) {
+    return String(t == null ? "" : t).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  var VERDICT_LABEL = { likely_ai: "likely AI", possible_ai: "possible AI",
+                        human: "reads human", too_short: "too short to judge" };
+
+  function renderVerbatims(d) {
+    // question filter, rebuilt only when the question set changes
+    var sel = $("#ai-qid");
+    var ids = d.summary.per_question.map(function (q) { return q.id; });
+    if (sel.options.length - 1 !== ids.length) {
+      var cur = sel.value;
+      sel.innerHTML = '<option value="">All open-text questions</option>' + ids.map(function (id) {
+        var q = d.summary.per_question.filter(function (x) { return x.id === id; })[0];
+        return '<option value="' + id + '">' + id + " \u00b7 " + q.answers + " answers, " +
+          q.likely + " flagged</option>";
+      }).join("");
+      sel.value = ids.indexOf(cur) >= 0 ? cur : "";
+    }
+
+    if (!d.rows.length) {
+      $("#ai-list").innerHTML = '<div class="ai-empty">' +
+        (d.summary.answers_scored
+          ? "Nothing flagged: every written answer in this scope reads as genuine."
+          : "No written answers in this scope yet.") + "</div>";
+      return;
+    }
+    $("#ai-list").innerHTML = d.rows.map(function (r) {
+      var meta = [r.words + " words"];
+      if (r.keystrokes) meta.push(r.keystrokes + " keystrokes");
+      else meta.push("no keystrokes recorded");
+      if (r.pasted_chars) meta.push(r.pasted_pct + "% pasted (" + r.pasted_chars + " chars)");
+      if (r.chars_per_second) meta.push(r.chars_per_second + " chars/sec");
+      if (r.duplicate_of.length) meta.push("identical to " + r.duplicate_of.join(", "));
+      if (r.confirmed) meta.push("respondent confirmed it is their own");
+      var why = r.signals.map(function (x) {
+        return '<span class="chip bad">' + esc(x) + "</span>";
+      }).concat(r.proofread.map(function (x) {
+        return '<span class="chip">Proofreading: ' + esc(x) + "</span>";
+      })).join("");
+      return '<div class="vb ' + r.verdict + '">' +
+        '<div class="vb-head"><code>' + esc(r.code) + "</code><b>" + esc(r.qid) + "</b>" +
+        '<span class="vb-score">' + (VERDICT_LABEL[r.verdict] || r.verdict) +
+        (r.score == null ? "" : " \u00b7 " + r.score + "/100") + "</span>" +
+        (r.is_test ? '<span class="pill test">test</span>' : "") +
+        '<span class="vb-meta">' + esc(meta.join(" \u00b7 ")) + "</span></div>" +
+        (why ? '<div class="vb-why">' + why + "</div>" : "") +
+        '<div class="vb-text">' + esc(r.text) + "</div>" +
+        (r.stem ? '<div class="vb-stem">' + esc(r.stem) + "</div>" : "") +
+        "</div>";
+    }).join("") + (d.truncated ? '<div class="hint">First 500 answers shown - use the filters ' +
+      "or the Excel export for the rest.</div>" : "");
+  }
+
+  function loadVerbatims() {
+    var extra = "scope=" + scope;
+    var qid = $("#ai-qid").value, v = $("#ai-verdict").value, q = $("#ai-search").value.trim();
+    if (qid) extra += "&qid=" + encodeURIComponent(qid);
+    if (v) extra += "&verdict=" + encodeURIComponent(v);
+    if (q) extra += "&q=" + encodeURIComponent(q);
+    api("/api/admin/verbatims?" + extra).then(renderVerbatims)
+      .catch(function (e) { toast("Could not load the verbatim queue: " + e.message, true); });
   }
 
   // ---- wiring ----
@@ -196,6 +273,13 @@
     download("/admin/export.json?scope=" + scope, "JSON", this);
   });
   $("#refresh").addEventListener("click", load);
+  $("#ai-apply").addEventListener("click", loadVerbatims);
+  ["#ai-qid", "#ai-verdict"].forEach(function (sel) {
+    $(sel).addEventListener("change", loadVerbatims);
+  });
+  $("#ai-search").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") loadVerbatims();
+  });
 
   $("#reset-test").addEventListener("click", function () { reset("test", "test", this); });
   $("#reset-real").addEventListener("click", function () { reset("real", "real", this); });

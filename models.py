@@ -47,7 +47,9 @@ CREATE TABLE IF NOT EXISTS respondents (
     elapsed_seconds REAL DEFAULT 0,
     task_order TEXT,
     alt_positions TEXT,
-    user_agent TEXT
+    user_agent TEXT,
+    language TEXT DEFAULT '',
+    embedded TEXT DEFAULT '{}'
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_resp_code ON respondents(study_id, respondent_code);
 CREATE TABLE IF NOT EXISTS answers (
@@ -135,6 +137,10 @@ def init_db(path: str | None = None) -> None:
                 conn.execute("ALTER TABLE respondents ADD COLUMN study_id INTEGER DEFAULT 1")
             if "is_test" not in cols:
                 conn.execute("ALTER TABLE respondents ADD COLUMN is_test INTEGER DEFAULT 0")
+            if "language" not in cols:
+                conn.execute("ALTER TABLE respondents ADD COLUMN language TEXT DEFAULT ''")
+            if "embedded" not in cols:
+                conn.execute("ALTER TABLE respondents ADD COLUMN embedded TEXT DEFAULT '{}'")
             tbl_sql = conn.execute(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='respondents'"
             ).fetchone()[0]
@@ -186,13 +192,37 @@ class Study:
     @staticmethod
     def list_with_counts() -> list[dict]:
         rows = get_db().execute(
-            "SELECT s.slug, s.title, s.status, s.updated_at, "
+            "SELECT s.slug, s.title, s.status, s.updated_at, s.cfg, "
             "(SELECT COUNT(*) FROM respondents r WHERE r.study_id=s.id) AS n, "
             "(SELECT COUNT(*) FROM respondents r WHERE r.study_id=s.id AND "
             "r.status='complete') AS c FROM studies s ORDER BY s.id").fetchall()
-        return [{"slug": r["slug"], "title": r["title"], "status": r["status"],
-                 "updated_at": r["updated_at"], "started": r["n"], "complete": r["c"]}
-                for r in rows]
+        out = []
+        for r in rows:
+            cfg = json.loads(r["cfg"]) if r["cfg"] else {}
+            out.append({"slug": r["slug"], "title": r["title"], "status": r["status"],
+                        "updated_at": r["updated_at"], "started": r["n"], "complete": r["c"],
+                        "parent": cfg.get("parent") or "", "language": cfg.get("language") or ""})
+        return out
+
+    @staticmethod
+    def children_of(slug: str) -> list["Study"]:
+        """Translation children: studies whose config points at ``slug`` as parent."""
+        return [st for st in (Study.get(r["slug"]) for r in get_db().execute(
+            "SELECT slug FROM studies").fetchall())
+                if st and st.cfg.get("parent") == slug]
+
+    def is_child(self) -> bool:
+        return bool(self.cfg.get("parent"))
+
+    def parent_study(self) -> "Study | None":
+        return Study.get(self.cfg.get("parent") or "") if self.is_child() else None
+
+    def effective_live(self) -> bool:
+        """A translation child is live exactly when its parent is."""
+        if self.is_child():
+            par = self.parent_study()
+            return bool(par and par.status == "live")
+        return self.status == "live"
 
     # ---- mutations
     @staticmethod
@@ -224,6 +254,24 @@ class Study:
         return slug
 
     @staticmethod
+    def move(old_slug: str, new_slug: str) -> str:
+        """Rename / re-file a study under a new slug ("Move survey")."""
+        new_slug = (new_slug or "").strip().lower()
+        if not SLUG_RE.fullmatch(new_slug):
+            raise StudyError("bad slug")
+        if new_slug == old_slug:
+            return new_slug
+        if Study.get(new_slug):
+            raise StudyError("a study with that slug already exists")
+        if not Study.get(old_slug):
+            raise StudyError("unknown study")
+        conn = get_db()
+        with write_lock, conn:
+            conn.execute("UPDATE studies SET slug=?, updated_at=? WHERE slug=?",
+                         (new_slug, now(), old_slug))
+        return new_slug
+
+    @staticmethod
     def set_status(slug: str, status: str) -> None:
         if status not in ("draft", "live", "closed"):
             raise StudyError("bad status")
@@ -231,6 +279,12 @@ class Study:
         with write_lock, conn:
             conn.execute("UPDATE studies SET status=?, updated_at=? WHERE slug=?",
                          (status, now(), slug))
+
+    @staticmethod
+    def delete_with_children(slug: str) -> None:
+        for child in Study.children_of(slug):
+            Study.delete(child.slug)
+        Study.delete(slug)
 
     @staticmethod
     def delete(slug: str) -> None:
@@ -273,7 +327,9 @@ class Answer:
         out: dict = {}
         for r in rows:
             out.setdefault(r["question_id"], {})
-            if r["item"] in ("codes", "order"):
+            # structured items: multi-select codes, rank order, and the free-text quality
+            # telemetry / AI verdict the survey client stores next to a written answer
+            if r["item"] in ("codes", "order", "_meta", "_ai"):
                 try:
                     out[r["question_id"]][r["item"]] = json.loads(r["value"])
                 except (json.JSONDecodeError, TypeError):
@@ -293,7 +349,7 @@ class Answer:
                     "VALUES (?,?,?,?,?) ON CONFLICT(respondent_id, question_id, item) "
                     "DO UPDATE SET value=excluded.value, seconds=excluded.seconds",
                     (rid, qid, item,
-                     json.dumps(val) if isinstance(val, list) else str(val), seconds))
+                     json.dumps(val) if isinstance(val, (list, dict)) else str(val), seconds))
 
 
 class Respondent:
@@ -337,7 +393,8 @@ class Respondent:
 
     # ---- lifecycle
     @staticmethod
-    def create(study: Study, is_test: bool, user_agent: str = "") -> Respondent:
+    def create(study: Study, is_test: bool, user_agent: str = "", language: str = "",
+               embedded: dict | None = None) -> Respondent:
         """Allocate the next T###/R### code for the study and open a session."""
         conn = get_db()
         sid = secrets.token_urlsafe(16)
@@ -350,8 +407,9 @@ class Respondent:
             code = f"{prefix}{(row['m'] or 0) + 1:03d}"
             conn.execute(
                 "INSERT INTO respondents (respondent_code, session_id, study_id, is_test, "
-                "started_at, user_agent) VALUES (?,?,?,?,?,?)",
-                (code, sid, study.id, int(is_test), now(), (user_agent or "")[:300]))
+                "started_at, user_agent, language, embedded) VALUES (?,?,?,?,?,?,?,?)",
+                (code, sid, study.id, int(is_test), now(), (user_agent or "")[:300],
+                 (language or "")[:12], json.dumps(embedded or {})))
         return Respondent.by_session(sid)
 
     def set_assignment(self, task_order: list, alt_positions: dict) -> None:

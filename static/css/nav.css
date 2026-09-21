@@ -5,6 +5,4 @@
   opacity:.85;white-space:nowrap;transition:background .12s,opacity .12s}
 .appnav-link:hover{background:rgba(255,255,255,.16);opacity:1}
 .appnav-link.on{background:#fff;color:#0b4f6c;opacity:1}
-.appnav-link.key{background:#ffd166;color:#3d2c00;opacity:1;margin-left:4px}
-.appnav-link.out{opacity:.65;font-weight:500;margin-left:4px}
 @media (max-width:640px){.appnav-link{padding:5px 8px;font-size:12px}}

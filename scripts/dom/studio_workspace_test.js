@@ -2,10 +2,10 @@
    logic, undo delete and the pipe picker.  Needs the server on :8000 and jsdom.
    node scripts/dom/studio_workspace_test.js */
 let JSDOM; try { ({ JSDOM } = require("jsdom")); } catch (e) { ({ JSDOM } = require("/tmp/node_modules/jsdom")); }
-const http=require("http"); const BASE=process.env.BASE||"http://127.0.0.1:8000"; const TK="token="+(process.env.TOKEN||"beacon-admin");
+const http=require("http"); const BASE=process.env.BASE||"http://127.0.0.1:8000";
 function req(method,p,body){return new Promise((res,rej)=>{const u=new URL(BASE+p);const h={};if(body)h["Content-Type"]="application/json";
   const r=http.request(u,{method,headers:h},x=>{let d="";x.on("data",c=>d+=c);x.on("end",()=>res({status:x.statusCode,body:d}));});r.on("error",rej);if(body)r.write(body);r.end();});}
-const get=p=>req("GET",p+(p.includes("?")?"&":"?")+TK).then(r=>r.body);
+const get=p=>req("GET",p).then(r=>r.body);
 let fails=0; const check=(l,c,d="")=>{console.log((c?"PASS  ":"FAIL  ")+l+(c?"":"  -> "+d)); if(!c)fails++;};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{
@@ -13,9 +13,9 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
     {id:"Q1",section:"S1",type:"single_select",stem:"Your specialty?",options:[{code:1,label:"Oncology"},{code:2,label:"Haematology"}]},
     {id:"Q2",section:"S2",type:"multi_select",stem:"Therapies used?",options:[{code:1,label:"Chemo"},{code:2,label:"IO"}]},
     {id:"Q3",section:"S2",type:"open_text",stem:"Tell us more"}],tpp:{},explainer_scenes:[]};
-  const slug=JSON.parse((await req("POST","/api/studio/save?"+TK,JSON.stringify({title:"Workspace Test",cfg}))).body).slug;
+  const slug=JSON.parse((await req("POST","/api/studio/save",JSON.stringify({title:"Workspace Test",cfg}))).body).slug;
   const saved=async()=>JSON.parse(await get("/api/studio/study?slug="+slug)).cfg;
-  const dom=new JSDOM(await get("/studio/"),{url:BASE+"/studio/?"+TK+"#"+slug,runScripts:"outside-only",pretendToBeVisual:true}); const w=dom.window;
+  const dom=new JSDOM(await get("/studio/"),{url:BASE+"/studio/#"+slug,runScripts:"outside-only",pretendToBeVisual:true}); const w=dom.window;
   w.BEACON_PREVIEW_MODE=true; w.requestAnimationFrame=fn=>setTimeout(fn,0); w.scrollTo=()=>{}; w.Element.prototype.scrollIntoView=function(){};
   w.confirm=()=>true;
   let saves=0;
@@ -89,7 +89,9 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
   // --- add question via type picker
   $$("[data-act=qadd]")[1].click(); await sleep(20);
-  check("type picker modal opens with grouped, plain-English types", !$("#st-modal").hidden && $$(".st-type").length===14 && /Choose one/.test($("#st-modal").textContent));
+  check("type picker modal opens as the grouped add-item library", !$("#st-modal").hidden && $$(".st-type").length===25 &&
+    /Multiple Choice/.test($("#st-modal").textContent) && /Methodologies/.test($("#st-modal").textContent) &&
+    /Page Randomizer/.test($("#st-modal").textContent) && /Embedded Variable/.test($("#st-modal").textContent));
   $$(".st-type").find(b=>b.getAttribute("data-type")==="rating_grid").click(); await sleep(40);
   check("new rating grid inserted after selected question in Main, selected, next free id", $("#st-modal").hidden && $$(".st-qi").length===4 && $(".st-qi.on .st-qi-id").textContent==="Q10" && $$(".st-qi")[2].classList.contains("on"));
   check("rows card with scale fields shown", $$('.st-items[data-kind=row] .st-item:not(.st-item-head)').length===2 && $("#f-smin"));
@@ -122,6 +124,6 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   $("[data-act=back]").click(); await sleep(500);
   check("dashboard with search/filter and stat cards", $("#home-search") && $$(".st-card").length>=1 && $(".st-seg-btn.on"));
   check("no JS errors", errs.length===0, errs.join("; "));
-  await req("POST","/api/studio/delete?"+TK,JSON.stringify({slug}));
+  await req("POST","/api/studio/delete",JSON.stringify({slug}));
   process.exit(fails?1:0);
 })().catch(e=>{console.error("ERR",e);process.exit(1)});
