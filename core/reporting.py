@@ -6,11 +6,18 @@ from __future__ import annotations
 
 import time
 
+from .ai_detect import VERDICT_LIKELY, duplicate_verbatims
 from .conjoint import task_list
-from .qc import qc_flags
+from .qc import free_text, qc_flags, score_free_text
+
+
+def _verbatim_qs(cfg: dict) -> list:
+    return [(q, "_") for q in (cfg.get("qc", {}) or {}).get("verbatim_qs", [])]
+
 
 def flatten(respondent, answers: dict, cfg: dict) -> dict:
     quota = cfg.get("quota", {})
+    ai = score_free_text(answers, cfg, _verbatim_qs(cfg))
     out = {
         "respondent_code": respondent["respondent_code"],
         "is_test": "test" if respondent["is_test"] else "real",
@@ -23,6 +30,9 @@ def flatten(respondent, answers: dict, cfg: dict) -> dict:
         "elapsed_minutes": round((respondent["elapsed_seconds"] or 0) / 60, 1),
         "qc_flags": ";".join(qc_flags(answers, respondent["elapsed_seconds"] or 0,
                                       cfg, respondent["status"] or "complete")["flags"]),
+        # AI-answer roll-up: how many written answers scored over the study's flag threshold
+        "ai_generated_answers": sum(1 for r in ai.values() if r["verdict"] == VERDICT_LIKELY),
+        "ai_max_score": max([r["score"] for r in ai.values()], default=0),
     }
     # quota lookups when the study defines them
     setting_code = answers.get(quota.get("setting_q", ""), {}).get("_") if quota else None
@@ -83,6 +93,15 @@ def flatten(respondent, answers: dict, cfg: dict) -> dict:
             n_tasks = (cfg.get("conjoint") or {}).get("n_tasks", 0)
             for i in range(1, n_tasks + 1):
                 out[f"{qid}_T{i}"] = a.get(f"T{i}", "")
+        if qid in ai:      # any free-text box, including a "please specify" box
+            out[qid + "_ai_score"] = ai[qid]["score"]
+            out[qid + "_ai_verdict"] = ai[qid]["verdict"]
+            meta = a.get("_meta") or {}
+            ack = (a.get("_ai") or {}).get("ack")
+            out[qid + "_ai_confirmed_own_words"] = ("yes" if ack else
+                                                    "no" if ack is False else "")
+            out[qid + "_pasted_chars"] = meta.get("pasted_chars", "")
+            out[qid + "_keystrokes"] = meta.get("keystrokes", "")
         if q.get("randomize") and q.get("randomize") != "none":
             out[qid + "_order_shown"] = a.get("_order", "")
     return out
@@ -148,6 +167,14 @@ def build_sheets(records: list, scope: str, cfg: dict):
         ["Respondents with QC flags",
          sum(1 for r in complete if qc_flags(r["answers"], r["elapsed_seconds"] or 0,
                                              cfg)["flags"])],
+        ["Written answers flagged as AI-generated",
+         sum(1 for r in complete for v in score_free_text(r["answers"], cfg,
+                                                          _verbatim_qs(cfg)).values()
+             if v["verdict"] == VERDICT_LIKELY)],
+        ["Written answers needing review (possible AI)",
+         sum(1 for r in complete for v in score_free_text(r["answers"], cfg,
+                                                          _verbatim_qs(cfg)).values()
+             if v["verdict"] == "possible_ai")],
         ["", ""],
     ]
     if cfg.get("quota"):
@@ -193,6 +220,30 @@ def build_sheets(records: list, scope: str, cfg: dict):
     so_rows = [[r["respondent_code"], "test" if r["is_test"] else "real",
                 r["screen_out_at"] or "", r["screen_out_reason"] or "", r["started_at"] or ""]
                for r in screened]
+
+    ver_headers = ["respondent_code", "is_test", "question_id", "stem", "words", "ai_score",
+                   "verdict", "confirmed_own_words", "pasted_chars", "keystrokes",
+                   "chars_per_second", "duplicate_of", "evidence", "proofreading", "answer"]
+    dups = duplicate_verbatims(records, cfg)
+    ver_rows = []
+    for r in records:
+        scored = score_free_text(r["answers"], cfg, _verbatim_qs(cfg))
+        for f in free_text(r["answers"], cfg, _verbatim_qs(cfg)):
+            res = scored.get(f["qid"]) or {}
+            meta = f["meta"] or {}
+            typed = (meta.get("typed_ms") or 0) / 1000.0
+            cps = round(len(f["text"]) / typed, 1) if typed else ""
+            ver_rows.append([
+                r["respondent_code"], "test" if r["is_test"] else "real", f["qid"],
+                (f["question"].get("stem") or "")[:90], len(f["text"].split()),
+                res.get("score", ""), res.get("verdict", "too_short"),
+                "yes" if (r["answers"].get(f["qid"], {}).get("_ai") or {}).get("ack") else "",
+                meta.get("pasted_chars", ""), meta.get("keystrokes", ""), cps,
+                ";".join(dups.get((r["respondent_code"], f["qid"]), [])),
+                "; ".join(res.get("signals", [])), "; ".join(res.get("proofread", [])),
+                f["text"][:2000]])
+    order = {"likely_ai": 0, "possible_ai": 1, "human": 2, "too_short": 3}
+    ver_rows.sort(key=lambda x: (order.get(x[6], 4), -(x[5] or 0)))
 
     qc_headers = ["respondent_code", "is_test", "elapsed_minutes", "flags", "clean"]
     qc_rows = []
@@ -252,7 +303,9 @@ def build_sheets(records: list, scope: str, cfg: dict):
                             ("numeric", "slider") else "free text"])
 
     widths_map = {"Field summary": [52, 22], "Screen-outs": [16, 9, 16, 44, 20],
-                  "QC flags": [16, 9, 15, 46, 8],
+                  "QC flags": [16, 9, 15, 46, 8], "Verbatim AI check": [16, 8, 12, 46, 8, 9,
+                                                                         13, 12, 10, 10, 9, 12,
+                                                                         52, 40, 90],
                   "Data dictionary": [18, 8, 14, 58, 10, 52, 40]}
     return [
         ("Field summary", ["Metric", "Value"], summary_rows, widths_map["Field summary"]),
@@ -260,6 +313,7 @@ def build_sheets(records: list, scope: str, cfg: dict):
         ("Conjoint long", conj_headers, conj_rows, None),
         ("Screen-outs", so_headers, so_rows, widths_map["Screen-outs"]),
         ("QC flags", qc_headers, qc_rows, widths_map["QC flags"]),
+        ("Verbatim AI check", ver_headers, ver_rows, widths_map["Verbatim AI check"]),
         ("Data dictionary", dd_headers, dd_rows, widths_map["Data dictionary"]),
     ]
 

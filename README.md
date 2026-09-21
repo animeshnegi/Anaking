@@ -16,12 +16,13 @@ Anaking/
 ├── models.py           SQLite schema/migrations + Study / Respondent / Answer models
 ├── routes/             one file per app, each mounted on its own URL
 │   ├── home.py         /            landing page + legacy redirects
-│   ├── survey.py       /survey/…    respondent survey + /api/*
+│   ├── survey.py       /survey/…    respondent survey + /api/* (incl. /api/check_text)
 │   ├── studio.py       /studio/     survey builder      + /api/studio/*
 │   └── admin.py        /admin/      dashboard, exports  + /api/admin/*
 ├── core/               domain logic (no Flask routes in here)
 │   ├── conjoint.py     balanced design generator + per-respondent randomisation
-│   ├── qc.py           speeder / attention / straight-line / gibberish flags
+│   ├── qc.py           speeder / attention / straight-line / verbatim-quality flags
+│   ├── ai_detect.py    AI-generated & pasted answer detection + proofreading notes
 │   ├── reporting.py    flattening, export sheets, quick analysis
 │   ├── seed.py         seeds the BEACON study from survey_spec + data/design
 │   ├── survey_spec.py  the 24-question BEACON instrument
@@ -65,7 +66,7 @@ Three separate apps, each on its own URL (the home page at `/` links to all of t
 | | `/survey/test` | Same survey, stored as **test data** (codes T001, T002 …) |
 | | `/survey/<slug>` , `/survey/<slug>/test` | Any study launched from the Studio (test mode also previews drafts) |
 | **Studio** | `/studio/` (`/studio/#<slug>` opens a study) | Builder — create / edit / launch studies, design the walkthrough, generate conjoint designs, per-study analysis |
-| **Admin** | `/admin/` (`?study=<slug>` picks a study) | Dashboard — live counts, quota fill, QC flags, downloads, reset |
+| **Admin** | `/admin/` (`?study=<slug>` picks a study) | Dashboard — live counts, quota fill, QC flags, written-answer AI review, downloads, reset |
 | | `/admin/export.xlsx\|csv\|json?study=…&scope=all\|real\|test` | Exports |
 | | `/healthz` | Liveness check |
 
@@ -115,6 +116,55 @@ The plain-text `stem` is kept in step with the rich `stem_html` for exports, nar
 `static/css/preview-skin.css` is generated from `survey.css` by
 `python3 scripts/build_preview_skin.py` (re-run after changing survey styles).
 
+### Written-answer quality: AI-generated & pasted text (all open-text questions)
+
+Free text is the part of a study most often faked - paste a chatbot answer into the box and
+move on - so **every** free-text answer the study can collect is checked: each `open_text`
+question *and* every "please specify" box. The check is plain Python (`core/ai_detect.py`):
+no model weights, no network call, no new dependency, and it never deletes or blocks data.
+
+Two families of evidence are combined into one 0-100 score:
+
+| Family | Signals |
+|---|---|
+| **Linguistic** | AI self-identification and refusal phrasing ("as an AI language model…"), hallmark vocabulary (*delve, moreover, it is important to note, robust, landscape, streamline*…), markdown / smart-quote artefacts and list-shaped answers, a metronome sentence rhythm, essay-shaped paragraphs, an impersonal register with no contractions, *firstly / secondly / finally* scaffolding, no numbers or specifics from real practice |
+| **Behavioural** | keystrokes, pasted characters, characters per second of active typing, one-shot paste bursts, long tab-switches while "writing" — collected by `static/js/survey.js` and stored with the answer as `_meta` |
+
+Human evidence subtracts (contractions, first person, informal phrasing, concrete numbers,
+mechanical slips), so a rough, first-hand answer cannot be pushed over the line by one stray
+"overall,". Typing also pushes the pasted-character count back down, so a respondent who pastes
+a draft and then rewrites it by hand is not still carrying that paste on their record.
+
+The same scoring runs three times over the same answer, which is what makes the flag defensible:
+
+1. **While the respondent types** — `POST /api/check_text` scores the text as they go. The box
+   shows a chip with the score and the reasons ("AI-typical vocabulary · no contractions"),
+   plus proofreading notes (doubled words, placeholder brackets, run-on sentences, stray
+   markdown). In **confirm** mode they must either rewrite it or press *"I wrote this myself"*
+   before moving on; **warn** mode never holds them up.
+2. **On submit** — a final proofreading step lists every written answer that still looks
+   AI-generated, pasted or broken, with a rewrite box and a re-check button, before the survey
+   is sent. `POST /api/submit` re-scores everything server-side, so a client that skipped the
+   live call is still flagged: `ai_generated_<qid>` (likely), `ai_suspect_<qid>` (possible) and
+   the respondent-level roll-up `ai_generated_verbatim`.
+3. **After the field closes** — Admin → **Written answers** is the review queue: roll-up counts,
+   per-question breakdown, and every answer worst-first with its score, evidence, proofreading
+   notes, paste / keystroke telemetry and cross-respondent duplicates (one AI answer shared
+   round a panel). Filter by question, verdict or text; the same data ships as the
+   **Verbatim AI check** sheet of the Excel export, and per-answer columns
+   (`<qid>_ai_score`, `<qid>_ai_verdict`, `<qid>_ai_confirmed_own_words`, `<qid>_pasted_chars`,
+   `<qid>_keystrokes`) in **Responses**.
+
+Flags raised: `ai_generated_<qid>` (likely) and `ai_suspect_<qid>` (possible), plus a
+respondent-level `ai_generated_verbatim`. Nothing is ever deleted or blocked after the fact - a
+flagged answer stays in the data, marked, so the team can decide what to do with it.
+
+Settings live in Studio → **Settings & quality control** ("Written-answer AI check": what the
+respondent sees, warn-from / flag-from thresholds, and whether every open-text answer or only
+the listed verbatim ids are checked) with a per-question override on each open-text question
+(`ai_check`, `ai_action`). The check is **on by default** for every study, including ones saved
+before it existed.
+
 ### Product walkthrough (Studio → "Walkthrough" tab)
 
 The animated walkthrough respondents see before the survey is an editable list of **scenes**.
@@ -131,6 +181,7 @@ Production: `gunicorn -w 2 -b 0.0.0.0:8000 "app:create_app()"`
 
 ```bash
 python3 -m pytest                               # in-process suite, no server needed
+python3 -m pytest tests/test_ai_detect.py       # AI-answer detection, flags, queue, exports
 
 python3 app.py &                                # live-server scripts
 python3 scripts/e2e_live_server.py              # full flow, screen-outs, QC flags, exports
@@ -138,6 +189,8 @@ python3 scripts/e2e_reuse_live_server.py        # test/real scopes, xlsx, reset 
 python3 scripts/seed_demo.py                    # 7 demo respondents + sample workbook
 node scripts/dom/studio_workspace_test.js       # Studio workspace: outline/editor/preview, autosave (needs jsdom)
 node scripts/dom/pipe_picker_test.js            # Studio pipe picker (needs jsdom: npm i jsdom)
+node scripts/dom/survey_ai_check_test.js        # respondent AI check: chip, gate, proofreading step
+node scripts/dom/ai_check_team_test.js          # Studio AI settings + Admin review queue
 ```
 
 ## Study design material

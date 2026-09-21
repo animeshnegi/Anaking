@@ -676,8 +676,19 @@
         '<div class="st-field"><label>Suffix <span class="st-opt">e.g. %</span></label><input id="f-suffix" value="' + esc(ed.suffix || "") + '"></div></div>';
     }
     if (t === "open_text") {
+      var aiAct = ed.ai_check === false ? "off" : (ed.ai_action || "");
       html += '<div class="st-grid2"><div class="st-field"><label>Minimum words</label><input id="f-minwords" type="number" value="' + (ed.min_words || 3) + '"></div>' +
         '<div class="st-field"><label>Placeholder <span class="st-opt">grey text inside the empty box</span></label><div class="st-with-pipe"><input id="f-placeholder" value="' + esc(ed.placeholder || "") + '">' + pipeButton("f-placeholder", true) + "</div></div></div>";
+      html += '<h4 class="st-h4">Written-answer quality</h4>' +
+        '<div class="st-field"><label>AI-generated answer check <span class="st-opt">overrides the study-wide setting for this question</span></label>' +
+        '<select id="f-aiaction">' +
+        [["", "Study default - warn and ask them to confirm"],
+         ["confirm", "On - warn and ask them to confirm it is their own"],
+         ["warn", "On - warn only, never block"],
+         ["off", "Off for this question"]].map(function (o) {
+          return '<option value="' + o[0] + '"' + (aiAct === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+        }).join("") + "</select></div>" +
+        '<div class="st-note">The answer is scored while they type and again on the server, so a respondent who pastes a chatbot reply is warned in the moment and flagged on their record afterwards.</div>';
     }
     if (t === "rank") html += '<div class="st-grid2"><div class="st-field"><label>How many ranks to record <span class="st-opt">top-N</span></label><input id="f-rankcount" type="number" value="' + (ed.rank_count || 3) + '"></div></div>';
     if (t === "maxdiff") html += '<div class="st-field"><label>Rounds <span class="st-opt">comma-separated item codes, one round per line</span></label><textarea id="f-rounds">' +
@@ -834,6 +845,11 @@
     }
     if ((t === "numeric" || t === "slider") && val("f-min") !== undefined) { ed.min = num("f-min"); ed.max = num("f-max"); setOrDel(ed, "step", num("f-step")); setOrDel(ed, "prefix", val("f-prefix")); setOrDel(ed, "suffix", val("f-suffix")); }
     if (t === "open_text" && val("f-minwords") !== undefined) { setOrDel(ed, "min_words", num("f-minwords")); setOrDel(ed, "placeholder", val("f-placeholder")); }
+    if (t === "open_text" && val("f-aiaction") !== undefined) {
+      var qaa = val("f-aiaction");                    // "" = follow the study setting
+      setOrDel(ed, "ai_action", qaa);
+      if (qaa === "off") ed.ai_check = false; else delete ed.ai_check;
+    }
     if (t === "rank" && val("f-rankcount") !== undefined) setOrDel(ed, "rank_count", num("f-rankcount"));
     if (t === "maxdiff" && val("f-rounds") !== undefined) ed.rounds = String(val("f-rounds")).split("\n").filter(function (l) { return l.trim(); }).map(function (l) { return { items: l.split(",").map(function (x) { return x.trim(); }).filter(Boolean) }; });
     if (t === "choice_task" && val("f-vignette") !== undefined) ed.vignette = val("f-vignette");
@@ -1248,7 +1264,9 @@
       (cj ? '<div class="st-note">Current design: <b>' + cj.n_tasks + " tasks</b> \u00D7 " + (cj.tasks && cj.tasks[0] ? cj.tasks[0].length : 3) + " alternatives over " + attrs.length + " attributes.</div>" : "");
   }
   function settingsTab() {
-    var c = cur.cfg, qc = c.qc || {}, m = c.metrics || {};
+    var c = cur.cfg, qc = c.qc || {}, m = c.metrics || {}, ai = qc.ai || {};
+    var aiAction = ai.enabled === false ? "off" : (ai.action || "confirm");
+    var checkAll = qc.check_all_text === false ? "listed" : "all";
     var f = function (id, label, hint, value, ph, type) {
       return '<div class="st-field"><label>' + label + (hint ? ' <span class="st-opt">' + hint + "</span>" : "") + '</label><input id="' + id + '" data-set="1"' + (type ? ' type="' + type + '"' : "") + ' value="' + esc(value == null ? "" : value) + '"' + (ph ? ' placeholder="' + ph + '"' : "") + "></div>";
     };
@@ -1265,6 +1283,23 @@
       f("f-uniq", "Uniform conjoint choices", "id of the choice task", qc.uniform_q, "e.g. CT1") +
       f("f-verb", "Verbatim quality checks", "open-text ids, comma separated", (qc.verbatim_qs || []).join(", "), "e.g. Q20, Q21") +
       "</div>" +
+      '<h4 class="st-h4">Written-answer AI check <span class="st-opt">AI-generated / pasted text in open boxes</span></h4>' +
+      '<div class="st-grid3">' +
+      '<div class="st-field"><label>What the respondent sees</label><select id="f-aiaction" data-set="1">' +
+      [["confirm", "Warn, and ask them to confirm the answer is their own"],
+       ["warn", "Warn only - never hold them up"],
+       ["off", "Off for this study"]].map(function (o) {
+        return '<option value="' + o[0] + '"' + (aiAction === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+      }).join("") + "</select></div>" +
+      f("f-aiwarn", "Warn from score", "0-100 - respondent sees a caution", ai.warn_at == null ? 35 : ai.warn_at, "", "number") +
+      f("f-aiflag", "Flag from score", "0-100 - raised as a QC flag, listed for review", ai.flag_at == null ? 60 : ai.flag_at, "", "number") +
+      "</div>" +
+      '<div class="st-field"><label>Which written answers are checked</label><select id="f-aiall" data-set="1">' +
+      [["all", "Every open-text and \u201cplease specify\u201d answer"],
+       ["listed", "Only the verbatim ids listed above"]].map(function (o) {
+        return '<option value="' + o[0] + '"' + (checkAll === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+      }).join("") + "</select></div>" +
+      '<div class="st-note">Each answer is scored live while the respondent types and again after the field closes, from its writing style (AI-typical vocabulary, markdown, even sentence rhythm, impersonal register) and from how it arrived (pasted characters, keystrokes, typing speed). Scores and evidence appear in Admin under <b>Written answers</b> and in the <b>Verbatim AI check</b> export sheet. Nothing is ever deleted - flagged answers stay in the data.</div>' +
       '<h4 class="st-h4">Headline metrics <span class="st-opt">optional - shown on the Admin dashboard</span></h4><div class="st-grid3">' +
       f("f-m1", "Intent question", "top-2-box", m.intent_q, "e.g. Q15") +
       f("f-m2", "Share-of-patients question", "mean %", m.pct_q, "e.g. Q16") +
@@ -1279,6 +1314,18 @@
       setOrDel(c.qc, "attention_q", (val("f-attq") || "").trim()); setOrDel(c.qc, "attention_ok", (val("f-attok") || "").trim());
       setOrDel(c.qc, "straightline_q", (val("f-strq") || "").trim()); setOrDel(c.qc, "uniform_q", (val("f-uniq") || "").trim());
       c.qc.verbatim_qs = (val("f-verb") || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+      if (val("f-aiaction") !== undefined) {
+        c.qc.ai = c.qc.ai || {};
+        var aa = val("f-aiaction");
+        c.qc.ai.enabled = aa !== "off";
+        setOrDel(c.qc.ai, "action", aa === "confirm" ? "" : aa);
+        c.qc.ai.warn_at = num("f-aiwarn") == null ? 35 : num("f-aiwarn");
+        c.qc.ai.flag_at = num("f-aiflag") == null ? 60 : num("f-aiflag");
+        if (!Object.keys(c.qc.ai).length) delete c.qc.ai;
+      }
+      // setOrDel drops false, so this one is written out by hand
+      if (val("f-aiall") === "listed") c.qc.check_all_text = false;
+      else delete c.qc.check_all_text;
       c.metrics = c.metrics || {};
       setOrDel(c.metrics, "intent_q", (val("f-m1") || "").trim()); setOrDel(c.metrics, "pct_q", (val("f-m2") || "").trim()); setOrDel(c.metrics, "wtp_q", (val("f-m3") || "").trim());
     }

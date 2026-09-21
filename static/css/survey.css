@@ -549,3 +549,31 @@ h2.stem mark,.help mark,.opt mark{padding:0 3px;border-radius:3px}
 .opt-excl{border-style:dashed}
 .opt-excl.checked{border-style:solid}
 .opt-img{display:block;max-width:220px;max-height:140px;margin-top:6px;border-radius:6px;border:1px solid var(--line)}
+
+/* ================= AI-written answer check + final proofreading pass ================= */
+.oq-chip.ai{display:block;background:#fdecea;color:#8f1d17;border:1px solid #f0c2bd;
+  animation:capIn .3s ease}
+.oq-chip strong{font-weight:800}
+.ai-score{font-variant-numeric:tabular-nums;opacity:.85;font-weight:800}
+.ai-why{font-weight:500;opacity:.9}
+.ai-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+.ai-actions:empty{display:none}
+.g-btn.ghost{border-color:var(--line);color:var(--muted);background:#fff}
+.g-btn:disabled{opacity:.6;cursor:default}
+.ai-note{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:12.5px;
+  background:#fff4e2;border:1px solid #ecd6a8;color:#8a5300}
+
+.proof-card{max-width:760px}
+.proof-list{margin-top:6px}
+.proof-note{font-weight:700;margin:10px 0 4px}
+.proof-row{border:1px solid #f0c2bd;background:#fffdfc;border-radius:10px;padding:12px 13px;
+  margin:10px 0;animation:capIn .25s ease}
+.proof-head{font-size:13.5px;font-weight:600;margin-bottom:7px}
+.proof-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.pr-chip{font-size:11px;padding:3px 8px;border-radius:999px;background:var(--accent-soft);
+  color:var(--accent);border:1px solid #cfe3ec}
+.pr-chip.warn{background:#fff4e2;color:#b26a00;border-color:#ecd6a8}
+.proof-text{width:100%;min-height:96px;font:inherit;font-size:14px;padding:9px 11px;
+  border:1px solid var(--line);border-radius:8px;resize:vertical}
+.proof-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+.done-icon.note{background:var(--accent-soft);color:var(--accent)}

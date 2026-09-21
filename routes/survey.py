@@ -10,7 +10,7 @@ Pages
 
 API (used by static/js/survey.js)
     GET  /api/spec/<slug>   GET /api/progress?sid=
-    POST /api/start  /api/save  /api/submit  /api/voice
+    POST /api/start  /api/save  /api/submit  /api/voice  /api/check_text
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import re
 from flask import (Blueprint, abort, current_app, jsonify, render_template, request,
                    send_from_directory)
 
+from core.ai_detect import MAX_TEXT, ai_settings, score_text
 from core.conjoint import assignment_for
 from core.qc import qc_flags
 from core.seed import load_task_map
@@ -96,6 +97,8 @@ def spec(slug="beacon"):
         "conjoint_min_dwell": cfg.get("conjoint_min_dwell", 12),
         "use_tts": cfg.get("use_tts", False),
         "tpp": cfg.get("tpp", {}),
+        # study-wide AI-answer check settings; questions can override with ai_check/ai_action
+        "ai_check": cfg.get("qc", {}).get("ai", {}),
     })
 
 
@@ -143,6 +146,29 @@ def submit():
     cfg = Study.get_by_id(resp.study_id).cfg
     return jsonify({"ok": True, "respondent_code": resp.code,
                     **qc_flags(resp.answers(), seconds, cfg)})
+
+
+@bp.post("/api/check_text")
+def check_text():
+    """Live AI-generated / pasted answer check for one free-text box.
+
+    Called by the survey while the respondent is still typing, so the warning - and any
+    request to confirm the answer is their own - happens before the answer is locked in.
+    The very same scoring runs again server-side on submit and in the Admin review queue,
+    so a client that never calls this endpoint cannot hide anything.
+    """
+    body = json_body()
+    qid = str(body.get("qid") or "")[:40]
+    text = str(body.get("text") or "")[:MAX_TEXT]
+    meta = body.get("meta") if isinstance(body.get("meta"), dict) else None
+    study = Study.get(body.get("study") or "beacon") or Study.get("beacon")
+    cfg = study.cfg if study else {}
+    settings = ai_settings(cfg, qid)
+    res = score_text(text, meta, settings)
+    return jsonify({"ok": True, "qid": qid, "enabled": settings.get("enabled", True),
+                    "action": settings.get("action", "confirm"),
+                    "warn_at": settings.get("warn_at"), "flag_at": settings.get("flag_at"),
+                    **res})
 
 
 @bp.get("/api/progress")

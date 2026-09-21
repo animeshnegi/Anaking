@@ -233,6 +233,203 @@
     return null;
   }
 
+  // ============================================================ AI-written answer check
+  // Written answers are the part of a study most often faked: paste a chatbot reply into
+  // the box and move on. So every text box watches HOW the answer arrives (keystrokes,
+  // pastes, typing speed, time away from the tab) and asks the server to score WHAT it
+  // says. /api/check_text runs exactly the rules the QC engine applies after the field
+  // closes, so the warning a respondent sees and the flag on their record can never
+  // disagree - and a client that skipped the call would still be scored on submit.
+  var textMeta = {};        // qid -> telemetry collected in the browser
+  var aiState = {};         // qid -> latest server verdict (with the text it scored)
+  var proofreadSeen = false;
+
+  function escHtml(t) {
+    return String(t == null ? "" : t).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function metaFor(qid) {
+    if (!textMeta[qid]) {
+      textMeta[qid] = { keystrokes: 0, pastes: 0, pasted_chars: 0, input_events: 0,
+                        typed_ms: 0, blur_ms: 0 };
+    }
+    return textMeta[qid];
+  }
+
+  // "off" | "warn" | "confirm" - mirrors core.ai_detect.ai_settings() on the server
+  function aiActionOf(q) {
+    var g = (SPEC && SPEC.ai_check) || {};
+    if (g.enabled === false || (q && q.ai_check === false)) return "off";
+    var a = (q && q.ai_action) || g.action || "confirm";
+    return a === "off" ? "off" : (a === "warn" ? "warn" : "confirm");
+  }
+
+  // Counts real typing in one text box. Keystrokes push the pasted-character count back
+  // down, so a respondent who pastes a draft and then rewrites it by hand is not still
+  // carrying that paste on their record - the answer is judged on what they actually did.
+  function trackKeys(meta, box) {
+    var lastKey = 0, keysSinceInput = 0, lastLen = box.value.length, pasting = false;
+    box.addEventListener("keydown", function (e) {
+      if (!e.key || e.key.length !== 1) return;
+      var now = Date.now();
+      if (lastKey && now - lastKey < 3000) meta.typed_ms += now - lastKey;
+      lastKey = now;
+      meta.keystrokes++;
+      keysSinceInput++;
+      if (meta.pasted_chars > 0) meta.pasted_chars--;
+    });
+    box.addEventListener("paste", function (e) {
+      var cd = e.clipboardData || window.clipboardData;
+      meta.pastes++;
+      meta.pasted_chars += cd ? String(cd.getData("text") || "").length : 0;
+      pasting = true;
+    });
+    box.addEventListener("input", function () {
+      meta.input_events++;
+      var delta = box.value.length - lastLen;
+      lastLen = box.value.length;
+      if (pasting) { pasting = false; keysSinceInput = 0; return; }   // already counted above
+      // text that grew by a big chunk with no keystrokes behind it - drag and drop, a
+      // scripted insert, autofill of a whole answer - counts as pasted. The threshold
+      // leaves room for predictive text and IME composition, which add a word at a time.
+      if (delta - keysSinceInput >= 25) { meta.pasted_chars += delta; meta.pastes++; }
+      keysSinceInput = 0;
+    });
+  }
+
+  function checkText(qid, text, meta, cb) {
+    fetch("/api/check_text", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ study: STUDY.slug, qid: qid, text: text, meta: meta })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      res.text = text;
+      aiState[qid] = res;
+      var prev = (answers[qid] || {})._ai || {};
+      setAns(qid, "_ai", { score: res.score, verdict: res.verdict, ack: !!prev.ack,
+                           checked: Date.now() });
+      if (cb) cb(res);
+    }).catch(function () { if (cb) cb(null); });
+  }
+
+  function aiReasons(res) {
+    var out = [];
+    (res && res.signals || []).forEach(function (s) { if (s.weight > 0) out.push(s.label); });
+    return out;
+  }
+
+  // Wires one textarea: telemetry, live gibberish check, live AI check, confirm action.
+  function wireTextWatch(q, ta, chip, actions) {
+    var meta = metaFor(q.id);
+    var action = aiActionOf(q);
+    var deb = null, awayAt = 0, praised = false;
+
+    function snapshot() {
+      var m = {};
+      for (var k in meta) if (meta.hasOwnProperty(k)) m[k] = meta[k];
+      if (awayAt) m.blur_ms += Date.now() - awayAt;
+      return m;
+    }
+
+    function paint(res, txt) {
+      var acked = !!((answers[q.id] || {})._ai || {}).ack;
+      if (!res || !res.scored || res.verdict === "human") {
+        chip.className = "oq-chip" + (res && res.scored ? " ok" : "");
+        chip.innerHTML = res && res.scored ? "&#10003; Reads like your own words - thank you." : "";
+        actions.innerHTML = "";
+        if (res && res.scored && !praised && txt.split(/\s+/).length >= Math.max(3, q.min_words || 3)) {
+          praised = true;
+          coachSay("That is exactly the kind of insight this study needs. Thank you!", "good");
+        }
+        return;
+      }
+      var bad = res.verdict === "likely_ai";
+      chip.className = "oq-chip " + (bad ? "ai" : "warn");
+      chip.innerHTML =
+        "<strong>&#9888; " + (bad ? "This looks AI-written or pasted." :
+                                     "This may be AI-written or pasted.") + "</strong> " +
+        '<span class="ai-score">' + res.score + "/100</span><br>" +
+        '<span class="ai-why">' + escHtml(aiReasons(res).slice(0, 3).join(" \u00b7 ")) + "</span><br>" +
+        (acked
+          ? "Thank you - noted as your own words. Our reviewers can still see the score."
+          : "This study only works with your own words. Rough, short or unfinished is worth " +
+            "far more here than polished text from a chatbot - please rewrite it, or confirm " +
+            "below that you wrote it yourself.");
+      if (res.proofread && res.proofread.length) {
+        chip.innerHTML += '<br><span class="ai-why">Proofreading: ' +
+          escHtml(res.proofread.slice(0, 2).map(function (n) { return n.note; }).join("; ")) +
+          "</span>";
+      }
+      actions.innerHTML = "";
+      if (acked || action === "off") return;
+      if (action === "confirm") {
+        var mine = el("button", "g-btn", "&#10003; I wrote this myself");
+        mine.type = "button";
+        mine.addEventListener("click", function () {
+          var prev = (answers[q.id] || {})._ai || {};
+          setAns(q.id, "_ai", { score: res.score, verdict: res.verdict, ack: true,
+                                confirmed: Date.now() });
+          paint(res, ta.value.trim());
+          coachSay("Thank you for confirming - that is noted on your record.", "info");
+        });
+        actions.appendChild(mine);
+      }
+      var again = el("button", "g-btn ghost", "&#9998; I will rewrite it");
+      again.type = "button";
+      again.addEventListener("click", function () { ta.focus(); ta.select(); });
+      actions.appendChild(again);
+    }
+
+    function runCheck() {
+      var txt = ta.value.trim();
+      setAns(q.id, "_meta", snapshot());
+      if (txt.length < 20) {
+        chip.className = "oq-chip"; chip.innerHTML = ""; actions.innerHTML = "";
+        return;
+      }
+      var bad = textQuality(txt);            // instant, offline: keyboard mashes and filler
+      if (bad) {
+        chip.className = "oq-chip warn";
+        chip.innerHTML = "&#9888; This reads as " + bad + ". A sentence or two in your own " +
+          "words makes sure your insight counts - or record it with the microphone.";
+        actions.innerHTML = "";
+      }
+      if (action === "off") return;
+      checkText(q.id, txt, snapshot(), function (res) { if (res) paint(res, txt); });
+    }
+
+    trackKeys(meta, ta);
+    ta.addEventListener("keydown", function () {
+      if (meta.keystrokes % 20 === 0) setAns(q.id, "_meta", snapshot());
+    });
+    ta.addEventListener("paste", function () {
+      clearTimeout(deb);
+      deb = setTimeout(runCheck, 150);       // score a paste straight away
+    });
+    ta.addEventListener("drop", function () { meta.pastes++; meta.input_events++; });
+    ta.addEventListener("input", function () {
+      setAns(q.id, "_", ta.value); hideErr();
+      clearTimeout(deb);
+      deb = setTimeout(runCheck, 650);
+    });
+    ta.addEventListener("blur", function () {
+      awayAt = Date.now();
+      setAns(q.id, "_meta", snapshot());
+    });
+    ta.addEventListener("focus", function () {
+      if (awayAt) { meta.blur_ms += Date.now() - awayAt; awayAt = 0; }
+    });
+
+    // coming back to an answered question: show the verdict we already have, or re-score
+    var init = ta.value.trim();
+    if (init.length >= 20 && action !== "off") {
+      var cached = aiState[q.id];
+      if (cached && cached.text === init) paint(cached, init);
+      else setTimeout(runCheck, 80);
+    }
+  }
+
   // ============================================================ voice verbatims
   // Optional recorded answer via MediaRecorder; uploaded to /api/voice and referenced
   // from the answers payload by filename only.
@@ -1021,33 +1218,13 @@
         ta.placeholder = q.placeholder || "Type your answer here...";
         ta.value = getAns(q.id, "_") || "";
         var chip = el("div", "oq-chip");
-        var praised = false;
-        var deb = null;
-        ta.addEventListener("input", function () {
-          setAns(q.id, "_", ta.value); hideErr();
-          clearTimeout(deb);
-          deb = setTimeout(function () {
-            var txt = ta.value.trim();
-            if (txt.length < 8) { chip.className = "oq-chip"; chip.innerHTML = ""; return; }
-            var bad = textQuality(txt);
-            if (bad) {
-              chip.className = "oq-chip warn";
-              chip.innerHTML = "&#9888; This reads as " + bad + ". A sentence or two in your own " +
-                "words makes sure your insight counts - or record it with the microphone.";
-            } else {
-              chip.className = "oq-chip ok";
-              chip.innerHTML = "&#10003; Looks like a genuine thought - thank you.";
-              if (!praised && txt.split(/\s+/).length >= Math.max(3, q.min_words || 3)) {
-                praised = true;
-                coachSay("That is exactly the kind of insight this study needs. Thank you!", "good");
-              }
-            }
-          }, 300);
-        });
+        var aiBox = el("div", "ai-actions");
         body = el("div");
         body.appendChild(ta);
         body.appendChild(chip);
+        body.appendChild(aiBox);
         body.appendChild(recorderFor(q));
+        wireTextWatch(q, ta, chip, aiBox);
         break;
       }
     }
@@ -1129,6 +1306,14 @@
       var words = String(getAns(q.id, "_") || "").trim().split(/\s+/).filter(Boolean);
       if (words.length < q.min_words) {
         showErr("Please write at least " + q.min_words + " words."); return false;
+      }
+    }
+    if (q.type === "open_text" && aiActionOf(q) === "confirm") {
+      var ai = (answers[q.id] || {})._ai;
+      if (ai && ai.verdict === "likely_ai" && !ai.ack) {
+        showErr("Our quality check reads this answer as AI-written or pasted. Please write it " +
+                "in your own words, or confirm that you wrote it yourself.");
+        return false;
       }
     }
     return true;
@@ -1277,6 +1462,13 @@
 
   function finish() {
     stopNarration();
+    // every written answer gets one last quality pass before it leaves the browser
+    if (!proofreadSeen && freeTextAnswers().length) { showProofread(); return; }
+    submitSurvey();
+  }
+
+  function submitSurvey() {
+    stopNarration();
     var secs = (Date.now() - t0) / 1000;
     save({}, function () {
       fetch("/api/submit", {
@@ -1294,6 +1486,11 @@
           Math.round(secs / 60) + " min &middot; <strong>" + points +
           "</strong> insight points &middot; quality control: <code>" +
           (flags.length ? flags.join(", ") : "clean") + "</code>"));
+        if (flags.indexOf("ai_generated_verbatim") >= 0) {
+          card.appendChild(el("div", "ai-note",
+            "One or more written answers were flagged as possibly AI-generated. They stay on " +
+            "your record marked for review - the rest of your answers are unaffected."));
+        }
         show(card, true);
         $("#progress-wrap").style.display = "none";
         $("#hud").hidden = true;
@@ -1307,6 +1504,162 @@
           "browser. Please try submitting again.</p>"), true);
       });
     });
+  }
+
+  // ============================================================ final proofreading pass
+  // Before the survey is submitted, every written answer is scored once more and anything
+  // that reads as AI-generated, pasted in, or simply broken is put back in front of the
+  // respondent with the reasons and a chance to fix it. Answers stay flagged on the record
+  // either way - this is a nudge, not a way to scrub a flag.
+  var SERIOUS_NOTES = ["placeholder", "lorem", "doubled_word", "run_on", "markdown",
+                       "all_caps", "assistant_tone"];
+
+  function freeTextAnswers() {
+    var out = [];
+    (SPEC.questions || []).forEach(function (q) {
+      if (q.type !== "open_text" || aiActionOf(q) === "off") return;
+      var txt = String((answers[q.id] || {})._ || "").trim();
+      if (txt.length >= 20) out.push({ q: q, text: txt });
+    });
+    return out;
+  }
+
+  function flaggedFor(item) {
+    var res = aiState[item.q.id];
+    if (!res || res.text !== item.text) return null;           // not scored (yet)
+    if (((answers[item.q.id] || {})._ai || {}).ack) return null;   // already confirmed
+    var notes = (res.proofread || []).filter(function (n) {
+      return SERIOUS_NOTES.indexOf(n.key) >= 0;
+    });
+    if (res.verdict === "human" && !notes.length) return null;
+    return { res: res, notes: notes };
+  }
+
+  function proofRow(row) {
+    var q = row.item.q, res = row.res;
+    var box = el("div", "proof-row");
+    box.appendChild(el("div", "proof-head", "<b>" + q.id + ".</b> " + escHtml(pipeText(q.stem))));
+    var chips = el("div", "proof-chips");
+    var head = res.verdict === "likely_ai" ? "Looks AI-written"
+             : res.verdict === "possible_ai" ? "May be AI-written" : "Worth a fix";
+    chips.appendChild(el("span", "pr-chip" + (res.verdict === "human" ? "" : " warn"),
+      head + " &middot; " + res.score + "/100"));
+    aiReasons(res).slice(0, 4).forEach(function (r) { chips.appendChild(el("span", "pr-chip", escHtml(r))); });
+    row.notes.slice(0, 3).forEach(function (n) {
+      chips.appendChild(el("span", "pr-chip", "Proofreading: " + escHtml(n.note)));
+    });
+    box.appendChild(chips);
+
+    var ta = el("textarea", "proof-text");
+    ta.value = row.item.text;
+    trackKeys(metaFor(q.id), ta);            // rewriting here counts as typing
+    box.appendChild(ta);
+    row.ta = ta;
+
+    var acts = el("div", "proof-acts");
+    var mine = el("button", "g-btn", "&#10003; I wrote this myself");
+    mine.type = "button";
+    mine.addEventListener("click", function () {
+      row.mine = true;
+      mine.disabled = true;
+      mine.textContent = "Confirmed - thank you";
+    });
+    var re = el("button", "g-btn ghost", "&#8635; Re-check this answer");
+    re.type = "button";
+    re.addEventListener("click", function () {
+      row.item.text = ta.value.trim();
+      row.mine = false;
+      mine.disabled = false;
+      mine.innerHTML = "&#10003; I wrote this myself";
+      re.disabled = true;
+      re.textContent = "Checking\u2026";
+      setAns(q.id, "_meta", metaFor(q.id));
+      checkText(q.id, row.item.text, metaFor(q.id), function (fresh) {
+        re.disabled = false;
+        re.innerHTML = "&#8635; Re-check this answer";
+        if (!fresh) return;
+        row.res = fresh;
+        var f = flaggedFor(row.item);
+        if (!f) {
+          box.parentNode.removeChild(box);       // fixed - it now reads clean
+        } else {
+          // rebuild the row in place, keeping the same entry so Submit stores the new score
+          row.notes = f.notes;
+          row.mine = false;
+          box.parentNode.replaceChild(proofRow(row), box);
+        }
+      });
+    });
+    acts.appendChild(mine);
+    acts.appendChild(re);
+    box.appendChild(acts);
+    return box;
+  }
+
+  function stepIndexOf(q) {
+    for (var i = 0; i < steps.length; i++) if (steps[i].q && steps[i].q.id === q.id) return i;
+    return cur;
+  }
+
+  function showProofread() {
+    var items = freeTextAnswers();
+    var card = el("div", "card proof-card");
+    card.appendChild(el("div", "done-icon note", "&#9998;"));
+    card.appendChild(el("h1", null, "One last look at your written answers"));
+    card.appendChild(el("p", null,
+      "Before your answers reach the researchers we run a quality check on everything you " +
+      "wrote. Text that looks generated by an AI tool, pasted in from somewhere else, or in " +
+      "need of a quick fix is listed below with the reason. Your own words - short, rough or " +
+      "unfinished - are worth far more to this study than polished text from a chatbot."));
+    var hold = el("div", "proof-list", "Checking your written answers\u2026");
+    card.appendChild(hold);
+    show(card, true);
+
+    var waiting = 0;
+    items.forEach(function (it) {
+      var cached = aiState[it.q.id];
+      if (cached && cached.text === it.text) return;
+      waiting++;
+      checkText(it.q.id, it.text, metaFor(it.q.id), function () {
+        if (--waiting === 0) draw();
+      });
+    });
+    if (!waiting) draw();
+
+    function draw() {
+      var rows = items.map(function (it) {
+        var f = flaggedFor(it);
+        return f ? { item: it, res: f.res, notes: f.notes } : null;
+      }).filter(Boolean);
+      proofreadSeen = true;
+      if (!rows.length) { submitSurvey(); return; }
+
+      hold.innerHTML = "";
+      hold.appendChild(el("p", "proof-note",
+        rows.length + " of your " + items.length + " written answers need a look:"));
+      rows.forEach(function (r) { hold.appendChild(proofRow(r)); });
+
+      var nav = el("div", "nav");
+      var back = el("button", "btn ghost", "&larr; Back to the survey");
+      back.type = "button";
+      back.addEventListener("click", function () {
+        proofreadSeen = false;
+        go(stepIndexOf(rows[0].item.q));
+      });
+      var done = el("button", "btn primary", "Submit survey &rarr;");
+      done.type = "button";
+      done.addEventListener("click", function () {
+        rows.forEach(function (r) {
+          setAns(r.item.q.id, "_", r.ta.value);
+          setAns(r.item.q.id, "_ai", { score: r.res.score, verdict: r.res.verdict,
+                                       ack: !!r.mine, reviewed: Date.now() });
+        });
+        submitSurvey();
+      });
+      nav.appendChild(back);
+      nav.appendChild(done);
+      card.appendChild(nav);
+    }
   }
 
   // ============================================================ persistence

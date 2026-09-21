@@ -273,7 +273,9 @@ class Answer:
         out: dict = {}
         for r in rows:
             out.setdefault(r["question_id"], {})
-            if r["item"] in ("codes", "order"):
+            # structured items: multi-select codes, rank order, and the free-text quality
+            # telemetry / AI verdict the survey client stores next to a written answer
+            if r["item"] in ("codes", "order", "_meta", "_ai"):
                 try:
                     out[r["question_id"]][r["item"]] = json.loads(r["value"])
                 except (json.JSONDecodeError, TypeError):
@@ -293,7 +295,7 @@ class Answer:
                     "VALUES (?,?,?,?,?) ON CONFLICT(respondent_id, question_id, item) "
                     "DO UPDATE SET value=excluded.value, seconds=excluded.seconds",
                     (rid, qid, item,
-                     json.dumps(val) if isinstance(val, list) else str(val), seconds))
+                     json.dumps(val) if isinstance(val, (list, dict)) else str(val), seconds))
 
 
 class Respondent:
