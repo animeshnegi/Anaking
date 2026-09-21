@@ -137,6 +137,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   $('[data-act="open"][data-slug="' + slug + '"]').click(); await sleep(1000);
   check("opening the parent from its card returns to the builder", !!$('[data-act="qadd"]'));
 
+  // --- Translations tab: every child survey visible right in the builder
+  $('[data-tab="translations"]').click(); await sleep(1200);
+  const trRows = $$("#trtab-host .st-lang-row");
+  check("Translations tab lists both child surveys with coverage",
+    trRows.length === 2 && /Español/.test(trRows.map(r => r.textContent).join("")),
+    trRows.map(r => r.textContent.trim()).join(" | "));
+  check("Translations tab offers create / AI / link / remove per child",
+    !!$("#trtab-host #lang-add-sel") && !!$("#trtab-host [data-act=lang-ai]") &&
+    !!$("#trtab-host [data-act=child-link]") && !!$("#trtab-host [data-act=lang-del]"));
+  $('[data-act="tab-back"]').click(); await sleep(300);
+
   // --- library: grouped add-item picker with every reference entry
   $('[data-act="qadd"]').click(); await sleep(30);
   const groups = $$(".st-type-group").map(g => g.textContent.trim());

@@ -79,8 +79,9 @@ def create_app(config: str | type | dict | None = None) -> Flask:
     @app.after_request
     def _headers(resp):
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-        # pages and APIs are always fresh; hashed static assets carry ?v= busting
-        if request.path.startswith(("/api/", "/admin")) or "text/html" in (resp.mimetype or ""):
+        # everything is always fresh - stale cached UI caused repeated "not working"
+        # reports; the platform is small enough that no-store costs nothing
+        if request.path.startswith(("/api/", "/admin", "/static/")) or "text/html" in (resp.mimetype or ""):
             resp.headers["Cache-Control"] = "no-store"
         return resp
 

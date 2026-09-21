@@ -343,7 +343,7 @@
         "</div></div>" +
       "</div>" +
       '<nav class="st-tabs">' +
-      [["questions", "Questions", c.questions.length], ["tpp", "Walkthrough", (c.explainer_scenes || []).length || ""],
+      [["questions", "Questions", c.questions.length], ["translations", "Translations", ""], ["tpp", "Walkthrough", (c.explainer_scenes || []).length || ""],
        ["conjoint", "Conjoint", ""], ["settings", "Settings & QC", ""], ["responses", "Responses", ""], ["analysis", "Analysis", ""]].map(function (t) {
         return '<button class="st-tab' + (tab === t[0] ? " on" : "") + '" data-tab="' + t[0] + '">' + t[1] +
           (t[2] !== "" ? '<span class="st-count">' + t[2] + "</span>" : "") + "</button>";
@@ -359,7 +359,8 @@
     $$(".st-tab").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-tab") === tab); });
     if (tab === "questions") { p.innerHTML = workspace(); renderOutline(); renderEditorPane(); return; }
     p.innerHTML = '<div class="st-page"><div class="st-panel">' +
-      (tab === "tpp" ? tppTab() : tab === "conjoint" ? conjointTab() : tab === "settings" ? settingsTab() : "<p>Loading\u2026</p>") + "</div></div>";
+      (tab === "translations" ? translationsTab() : tab === "tpp" ? tppTab() : tab === "conjoint" ? conjointTab() : tab === "settings" ? settingsTab() : "<p>Loading\u2026</p>") + "</div></div>";
+    if (tab === "translations") refreshTranslationsTab();
     if (tab !== "questions") {
       var ph = p.querySelector(".st-page-head");
       if (ph) ph.insertAdjacentHTML("afterbegin",
@@ -533,7 +534,7 @@
             var host = document.getElementById("lang-tr-host");
             if (host) host.innerHTML = trTableHtml();
           });
-        } else refreshLangPanel();
+        } else refreshLangViews();
       });
     });
   }
@@ -548,7 +549,7 @@
     b.disabled = true; b.textContent = "Translating\u2026";
     flushSave(function () {
       api("/api/studio/autotranslate", { slug: aiSlug, lang: lg }).then(function (r) {
-        if (r.error) { toast("AI translate failed: " + r.error); refreshLangPanel(); return; }
+        if (r.error) { toast("AI translate failed: " + r.error); refreshLangViews(); return; }
         var nf = Object.keys(r.failed || {}).length;
         if (!r.translated && nf) toast("Machine translation could not be reached right now - " + nf + " string(s) left for manual translation below.");
         else toast("AI translated " + r.translated + " string(s)" + (nf ? " \u00B7 " + nf + " could not be translated - finish them by hand" : ""));
@@ -559,7 +560,7 @@
               var host = document.getElementById("lang-tr-host");
               if (host) host.innerHTML = trTableHtml();
             });
-          } else refreshLangPanel();
+          } else refreshLangViews();
         });
       });
     });
@@ -604,15 +605,8 @@
     var done = (d.strings || []).filter(function (x) { return (tbl[x.key] || "").trim(); }).length;
     return total ? Math.round(100 * done / total) : 100;
   }
-  function renderLangPanel() {
-    var d = langPanel.data;
-    var defLang = d.default_language || "en-US";
-    var html = '<div class="st-modal-head"><strong>Globalize Survey</strong>' +
-      '<span class="st-meta">The parent survey stays intact - each language becomes a connected child survey</span>' +
-      '<button class="st-btn sm ghost" data-act="modal-close" type="button">\u2190 Back</button><button class="ex-close" data-act="modal-close" type="button">&times;</button></div>';
-    html += '<div class="st-note">This study (<b>' + esc(cur.slug) + "</b>) is the <b>parent</b> in " + esc(defLang) +
-      ". Every translation below is a <b>child survey</b> with its own respondent link and data; it reads its questions live from the parent, so updating the parent updates every child.</div>";
-    html += '<div class="st-lang-list">';
+  function langRowsHtml(defLang) {
+    var html = "";
     if (!(langPanel.children || []).length) html += '<div class="st-note">No child surveys yet. Add a language below to create one.</div>';
     (langPanel.children || []).forEach(function (ch) {
       var meta = langMeta(ch.language);
@@ -625,12 +619,66 @@
         '<button class="st-btn sm" data-act="child-link" data-slug="' + esc(ch.slug) + '">Respondent link</button>' +
         '<button class="st-btn sm danger" data-act="lang-del" data-lang="' + esc(ch.language) + '">Remove</button></span></div>';
     });
+    return html;
+  }
+  function langAddHtml(defLang) {
     var have = (langPanel.children || []).map(function (ch) { return ch.language; });
-    html += '<div class="st-lang-add"><select id="lang-add-sel">' +
+    return '<div class="st-lang-add"><select id="lang-add-sel">' +
       LANGCAT.filter(function (l) { return l.code !== defLang && have.indexOf(l.code) < 0; }).map(function (l) {
         return '<option value="' + l.code + '">' + esc(l.name) + " (" + esc(l.native) + ")</option>"; }).join("") +
-      '</select><button class="st-btn on sm" data-act="lang-add">Create child survey</button></div></div>';
+      '</select><button class="st-btn on sm" data-act="lang-add">Create child survey</button></div>';
+  }
+  function createChild(la) {
+    if (!la) return;
+    api("/api/studio/globalize", { slug: cur.slug, lang: la }).then(function (r) {
+      if (r.error) { toast("Could not create child: " + r.error); return; }
+      closeModal();
+      toast("Child survey /" + r.slug + " created" + (r.existing ? " (already existed)" : ""));
+      openEditor(r.slug);
+    });
+  }
+  function removeChild(dl) {
+    var chSlug = ((langPanel.children || []).filter(function (x) { return x.language === dl; })[0] || {}).slug;
+    if (confirm("Remove the " + langMeta(dl).native + " child survey and its responses? The parent survey is not affected.")) {
+      api("/api/studio/delete", { slug: chSlug }).then(function () { refreshLangViews(); });
+    }
+  }
+  function refreshLangViews() {
+    if (document.getElementById("st-modal")) refreshLangPanel();
+    refreshTranslationsTab();
+  }
+  function renderLangPanel() {
+    var d = langPanel.data;
+    var defLang = d.default_language || "en-US";
+    var html = '<div class="st-modal-head"><strong>Globalize Survey</strong>' +
+      '<span class="st-meta">The parent survey stays intact - each language becomes a connected child survey</span>' +
+      '<button class="st-btn sm ghost" data-act="modal-close" type="button">\u2190 Back</button><button class="ex-close" data-act="modal-close" type="button">&times;</button></div>';
+    html += '<div class="st-note">This study (<b>' + esc(cur.slug) + "</b>) is the <b>parent</b> in " + esc(defLang) +
+      ". Every translation below is a <b>child survey</b> with its own respondent link and data; it reads its questions live from the parent, so updating the parent updates every child.</div>";
+    html += '<div class="st-lang-list">' + langRowsHtml(defLang) + langAddHtml(defLang) + "</div>";
     openModal(html, "st-langmodal");
+  }
+
+  function translationsTab() {
+    return '<div class="st-page-head"><h2>Translations</h2>' +
+      "<p>Every language this study is globalized into \u2014 each one a child survey connected to this parent, with its own respondent link and data.</p></div>" +
+      '<div id="trtab-host"><div class="st-meta">Loading translations\u2026</div></div>';
+  }
+  function refreshTranslationsTab() {
+    if (tab !== "translations" || !cur || (cur.cfg || {}).parent) return;
+    var host = document.getElementById("trtab-host");
+    if (!host) return;
+    Promise.all([api("/api/studio/strings?study=" + encodeURIComponent(cur.slug)),
+                 api("/api/studio/children?study=" + encodeURIComponent(cur.slug))])
+      .then(function (r) {
+        var h2 = document.getElementById("trtab-host");
+        if (tab !== "translations" || !h2) return;
+        langPanel.data = r[0]; langPanel.children = r[1].children || [];
+        var defLang = r[0].default_language || "en-US";
+        h2.innerHTML = '<div class="st-note">This study (<b>' + esc(cur.slug) + "</b>) is the <b>parent</b> in " + esc(defLang) +
+          ". Updating it updates every child below.</div>" +
+          '<div class="st-lang-list">' + langRowsHtml(defLang) + langAddHtml(defLang) + "</div>";
+      });
   }
 
   // translation child editor: parent questions are managed by the parent, this page
@@ -1462,27 +1510,11 @@
         toast("Embedded variable {" + name + "} captured from the link");
       });
     }
-    if (act === "lang-add") {
-      var la = val("lang-add-sel");
-      if (la) {
-        api("/api/studio/globalize", { slug: cur.slug, lang: la }).then(function (r) {
-          if (r.error) { toast("Could not create child: " + r.error); return; }
-          closeModal();
-          toast("Child survey /" + r.slug + " created" + (r.existing ? " (already existed)" : ""));
-          openEditor(r.slug);
-        });
-      }
-    }
+    if (act === "lang-add") { createChild(val("lang-add-sel")); }
     if (act === "child-open") { closeModal(); openEditor(b.getAttribute("data-slug")); }
     if (act === "child-open-parent") { openEditor(cur.cfg.parent); }
     if (act === "child-link") { copyLink(b.getAttribute("data-slug")); }
-    if (act === "lang-del") {
-      var dl = b.getAttribute("data-lang");
-      var chSlug = ((langPanel.children || []).filter(function (x) { return x.language === dl; })[0] || {}).slug;
-      if (confirm("Remove the " + langMeta(dl).native + " child survey and its responses? The parent survey is not affected.")) {
-        api("/api/studio/delete", { slug: chSlug }).then(function () { refreshLangPanel(); });
-      }
-    }
+    if (act === "lang-del") { removeChild(b.getAttribute("data-lang")); }
     if (act === "lang-ai") { aiTranslate(b); }
     if (act === "lang-save") { saveTranslations(); }
     if (act === "tl-save") {
@@ -1889,6 +1921,10 @@
     var act = b.getAttribute("data-act");
     var slug = b.getAttribute("data-slug");
     if (act === "child-open-parent") { if (cur) openEditor(cur.cfg.parent); return; }
+    if (act === "child-open") { openEditor(b.getAttribute("data-slug")); return; }
+    if (act === "child-link") { copyLink(b.getAttribute("data-slug")); return; }
+    if (act === "lang-add") { createChild(val("lang-add-sel")); return; }
+    if (act === "lang-del") { removeChild(b.getAttribute("data-lang")); return; }
     if (act === "lang-save") { saveTranslations(); return; }
     if (act === "lang-ai") { aiTranslate(b); return; }
     var i = Number(b.getAttribute("data-i"));
