@@ -527,7 +527,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
 .mdx-pick.worst.on{background:#5f7284;border-color:#5f7284;color:#fff}
 .mdx-pick:hover{transform:scale(1.06)}
 
-/* Slim strip shown above the survey only to a signed-in research-team browser */
+/* Slim strip shown above the survey in test mode only (research-team view) */
 .teambar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
   background:#1a2733;color:#fff;padding:6px 22px;font-size:12.5px}
 .teambar-note{opacity:.9}

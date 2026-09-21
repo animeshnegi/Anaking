@@ -5,7 +5,7 @@ Pages
     GET  /survey/                 the BEACON survey
     GET  /survey/test             same survey, stored as test data (T001, T002 ...)
     GET  /survey/<slug>           any study launched from the Studio
-    GET  /survey/<slug>/test      ... in test mode        (?preview=<token> for drafts)
+    GET  /survey/<slug>/test      ... in test mode (also previews drafts / closed studies)
     GET  /audio/<file>            narration clips
 
 API (used by static/js/survey.js)
@@ -22,7 +22,6 @@ import re
 from flask import (Blueprint, abort, current_app, jsonify, render_template, request,
                    send_from_directory)
 
-from core.auth import token_ok
 from core.conjoint import assignment_for
 from core.qc import qc_flags
 from core.seed import load_task_map
@@ -37,31 +36,33 @@ SLUG = r'<regex("[a-zA-Z0-9\-]+"):slug>'
 
 
 # ---------------------------------------------------------------- pages
-def _survey_page(slug: str, preview_token: str | None):
+def _survey_page(slug: str):
     study = Study.get(slug)
     if not study:
         abort(404, "unknown study")
-    if not study.is_live and not token_ok(preview_token or "", remember=True):
+    is_test = request.path.rstrip("/").endswith("/test")
+    # The respondent link only opens once the study is live; test mode always renders so
+    # the team can preview a draft (the Studio's "Preview" button opens /survey/<slug>/test).
+    if not study.is_live and not is_test:
         return render_template("survey/not_live.html", slug=slug), 403
     return render_template("survey/survey.html", slug=slug, study_title=study.title,
-                           is_test=request.path.rstrip("/").endswith("/test"),
-                           is_draft=not study.is_live)
+                           is_test=is_test, is_draft=not study.is_live)
 
 
 @bp.get("/survey/")
 def beacon_survey():
-    return _survey_page("beacon", None)
+    return _survey_page("beacon")
 
 
 @bp.get("/survey/test")
 def beacon_survey_test():
-    return _survey_page("beacon", None)
+    return _survey_page("beacon")
 
 
 @bp.get(f"/survey/{SLUG}")
 @bp.get(f"/survey/{SLUG}/test")
 def study_survey(slug):
-    return _survey_page(slug, request.args.get("preview"))
+    return _survey_page(slug)
 
 
 @bp.get("/audio/<path:name>")

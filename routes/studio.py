@@ -1,5 +1,5 @@
 """
-STUDIO  -  the survey builder (token protected: ?token=<ADMIN_TOKEN>).
+STUDIO  -  the survey builder.
 
 Page
     GET  /studio/                          builder UI
@@ -29,7 +29,6 @@ import shutil
 from flask import Blueprint, abort, current_app, jsonify, render_template, request, send_from_directory
 from werkzeug.utils import secure_filename
 
-from core.auth import admin_required
 from core.conjoint import make_conjoint
 from core.narration import clip_duration
 from core.reporting import analysis_for
@@ -44,19 +43,16 @@ bp = Blueprint("studio", __name__)
 
 
 @bp.get("/studio/")
-@admin_required("page")
 def page():
     return render_template("studio/studio.html")
 
 
 @bp.get("/api/studio/list")
-@admin_required()
 def list_studies():
     return jsonify(Study.list_with_counts())
 
 
 @bp.get("/api/studio/study")
-@admin_required()
 def get_study():
     study = Study.get(request.args.get("slug") or "")
     if not study:
@@ -66,14 +62,12 @@ def get_study():
 
 
 @bp.get("/api/studio/analysis")
-@admin_required()
 def analysis():
     slug = study_arg()
     return jsonify(analysis_for(records(slug), Study.cfg_of(slug)))
 
 
 @bp.post("/api/studio/save")
-@admin_required()
 def save():
     try:
         return jsonify({"ok": True, "slug": Study.save(json_body())})
@@ -82,7 +76,6 @@ def save():
 
 
 @bp.post("/api/studio/status")
-@admin_required()
 def status():
     body = json_body()
     try:
@@ -93,7 +86,6 @@ def status():
 
 
 @bp.post("/api/studio/delete")
-@admin_required()
 def delete():
     slug = json_body().get("slug") or ""
     try:
@@ -108,7 +100,6 @@ def delete():
 
 
 @bp.post("/api/studio/make_conjoint")
-@admin_required()
 def conjoint():
     body = json_body()
     try:
@@ -124,7 +115,6 @@ def _narration_dir(slug: str) -> str:
 
 
 @bp.post("/api/studio/narration")
-@admin_required()
 def upload_narration():
     slug = request.args.get("study") or ""
     if not Study.get(slug):
@@ -153,7 +143,6 @@ def upload_narration():
 
 
 @bp.post("/api/studio/narration/delete")
-@admin_required()
 def delete_narration():
     body = json_body()
     slug, clip = str(body.get("study") or ""), str(body.get("clip") or "")
@@ -181,7 +170,6 @@ def _media_dir(slug: str) -> str:
 
 
 @bp.post("/api/studio/media")
-@admin_required()
 def upload_media():
     slug = request.args.get("study") or ""
     if not Study.get(slug):
@@ -209,7 +197,6 @@ def upload_media():
 
 
 @bp.post("/api/studio/media/delete")
-@admin_required()
 def delete_media():
     body = json_body()
     slug, name = str(body.get("study") or ""), os.path.basename(str(body.get("file") or ""))

@@ -12,7 +12,7 @@ for testing.
 ```bash
 # from the repository root
 pip install -r requirements.txt
-python3 app.py --port 8000 --admin-token beacon-admin
+python3 app.py --port 8000
 ```
 
 | URL | What it is |
@@ -20,11 +20,11 @@ python3 app.py --port 8000 --admin-token beacon-admin
 | `/` | Respondent link — the live survey |
 | `/test` | Same survey, but the response is stored as **test data** (code T001, T002…) and excluded from real-data exports |
 | `/?new=1` | Forces a fresh response in a browser that already completed one |
-| `/admin?token=beacon-admin` | **Dashboard** — live counts, quota fill, demand headlines, QC flags, respondent list, downloads, reset buttons |
-| `/admin/export.xlsx?token=...&scope=all\|real\|test` | Excel workbook |
-| `/admin/export.csv?token=...&scope=...` | Flat CSV |
-| `/admin/export.json?token=...&scope=...` | Nested JSON |
-| `POST /admin/reset?token=...&scope=test\|real\|all` | Clear stored responses |
+| `/admin/` | **Dashboard** — live counts, quota fill, demand headlines, QC flags, respondent list, downloads, reset buttons |
+| `/admin/export.xlsx?scope=all\|real\|test` | Excel workbook |
+| `/admin/export.csv?scope=...` | Flat CSV |
+| `/admin/export.json?scope=...` | Nested JSON |
+| `POST /admin/reset?scope=test\|real\|all` | Clear stored responses |
 
 A Flask application (`app.py`, `routes.py`, `models.py`, `core/` at the repo root) on SQLite. The Excel
 export uses openpyxl when present and falls back to a standard-library OOXML writer
