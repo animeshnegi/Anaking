@@ -138,3 +138,36 @@ td code{background:#f4f7f9;padding:1px 6px;border-radius:4px;font-size:11.5px}
   .grid2{grid-template-columns:1fr}
   .toolbar{align-items:flex-start}
 }
+
+/* written-answer AI check */
+.ai-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;
+  margin-bottom:12px}
+.ai-card{border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#fbfdfe}
+.ai-card .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.ai-card .v{font-size:20px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.ai-card.warn .v{color:var(--warn)}
+.ai-card.bad .v{color:#b3261e}
+.ai-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:10px 0 14px;
+  font-size:12.5px}
+.ai-filters label{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:11px}
+.ai-filters select,.ai-filters input{font:inherit;font-size:12.5px;padding:6px 8px;
+  border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}
+.vb{border:1px solid var(--line);border-left:4px solid var(--line);border-radius:9px;
+  padding:11px 13px;margin-bottom:10px;background:#fff}
+.vb.likely_ai{border-left-color:#b3261e;background:#fffafa}
+.vb.possible_ai{border-left-color:var(--warn);background:#fffdf7}
+.vb.human{border-left-color:var(--good)}
+.vb-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12.5px;margin-bottom:6px}
+.vb-head code{background:#f4f7f9;padding:1px 6px;border-radius:4px}
+.vb-score{font-weight:700;font-variant-numeric:tabular-nums}
+.vb.likely_ai .vb-score{color:#b3261e}
+.vb.possible_ai .vb-score{color:var(--warn)}
+.vb-meta{color:var(--muted);font-size:11.5px}
+.vb-why{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
+.vb-why .chip{background:#f2f5f7;color:#4c5f70;border-color:var(--line)}
+.vb-why .chip.bad{background:#fdecea;color:#8f1d17;border-color:#f0c2bd}
+.vb-text{font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;
+  background:#f8fafb;border-radius:7px;padding:8px 10px;max-height:190px;overflow:auto}
+.vb-stem{font-size:11.5px;color:var(--muted);margin-top:6px}
+.ai-empty{font-size:13px;color:var(--good);background:var(--good-soft);
+  border:1px solid #c8e4d3;border-radius:7px;padding:9px 12px}

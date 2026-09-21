@@ -246,6 +246,14 @@
           (q.rows || []).forEach(function (r) { a[r.code] = q.scale ? Math.ceil((q.scale.min + q.scale.max) / 2) : 4; }); break;
         case "sum_to_100":
           (q.rows || []).forEach(function (r, k, arr) { a[r.code] = k === 0 ? 100 - 10 * (arr.length - 1) : 10; }); break;
+        case "date": a._ = "2026-01-15"; break;
+        case "numeric_matrix": (q.rows || []).forEach(function (r, k) { a[r.code] = 10 + k * 5; }); break;
+        case "delta": a.before = 40; a.after = 60; a.delta = 20; break;
+        case "concept_test":
+          (q.rows || []).forEach(function (r) { a[r.code] = q.scale ? Math.ceil((q.scale.min + q.scale.max) / 2) : 4; }); break;
+        case "loop":
+          (q.items || []).forEach(function (it, k) { a[it.code] = q.child === "numeric" ? 5 + k : "(sample " + it.label + ")"; }); break;
+        case "text_block": break;
         default: break;
       }
       out[q.id] = a;

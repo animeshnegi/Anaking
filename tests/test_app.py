@@ -31,20 +31,16 @@ def test_health(client):
     assert client.get("/healthz").get_json()["ok"] is True
 
 
-def test_home_page_links_to_all_apps(client, token):
+def test_home_page_links_to_all_apps(client):
     r = client.get("/")
     assert r.status_code == 200
-    for link in (b'href="/survey/"', b'href="/studio/"', b'href="/admin/"', b'href="/login'):
+    for link in (b'href="/survey/"', b'href="/studio/"', b'href="/admin/"'):
         assert link in r.data
     assert b"PROJECT BEACON - US Oncologist" in r.data       # seeded study listed
-    assert b"sign in required" in r.data
-    r = client.get("/", query_string={"token": "nope"})     # wrong token: no session
-    assert b"not correct" in r.data
-    # a ?token= on the home page signs the browser in (old bookmarks keep working)
-    r = client.get("/", query_string={"token": token})
-    assert b"Signed in as research team" in r.data
+    # team links are always shown - there is no sign-in step
     assert b'href="/studio/#beacon"' in r.data and b'href="/admin/?study=beacon"' in r.data
-    assert b"sign in required" not in r.data
+    for gone in (b"/login", b"token", b"sign in"):
+        assert gone not in r.data.lower(), gone
 
 
 def test_survey_pages_inject_study_slug(client):
@@ -58,8 +54,8 @@ def test_survey_pages_inject_study_slug(client):
 
 def test_legacy_urls_redirect(client):
     assert client.get("/test").headers["Location"].endswith("/survey/test")
-    r = client.get("/s/beacon/test", query_string={"preview": "x"})
-    assert r.status_code == 301 and r.headers["Location"].endswith("/survey/beacon/test?preview=x")
+    r = client.get("/s/beacon/test", query_string={"new": "1"})     # query string survives
+    assert r.status_code == 301 and r.headers["Location"].endswith("/survey/beacon/test?new=1")
 
 
 def test_static_assets_served(client):
@@ -79,57 +75,54 @@ def test_api_errors_are_json(client):
     assert client.get("/api/does-not-exist").is_json
 
 
-# ---------------------------------------------------------------- auth
-def test_admin_and_studio_need_token(client, token):
-    # pages redirect an anonymous browser to the sign-in form; APIs answer 403 JSON
-    for path in ("/admin/", "/studio/"):
-        r = client.get(path)
-        assert r.status_code == 302 and r.headers["Location"].startswith("/login?next="), path
-        assert client.get(path, query_string={"token": "wrong"}).status_code == 302, path
-    for path in ("/api/admin/data", "/api/studio/list", "/admin/export.xlsx", "/admin/export.csv"):
-        assert client.get(path).status_code == 403, path
-        assert client.get(path, query_string={"token": "wrong"}).status_code == 403, path
-    assert client.post("/admin/reset").status_code == 403
-    assert client.post("/api/studio/save", json={}).status_code == 403
-    # explicit ?token= still works everywhere (scripts, printed start-up links)
+# ---------------------------------------------------------------- open access (no token system)
+def test_studio_and_admin_are_open(client):
+    # pages and APIs answer directly - no token, header, cookie or sign-in redirect
     for path in ("/admin/", "/studio/", "/api/admin/data", "/api/studio/list",
-                 "/admin/export.xlsx", "/admin/export.csv"):
-        assert client.get(path, query_string={"token": token}).status_code == 200, path
+                 "/admin/export.xlsx", "/admin/export.csv", "/admin/export.json"):
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert "Set-Cookie" not in r.headers, path
+    # a stale ?token= from an old bookmark is simply ignored
+    assert client.get("/studio/", query_string={"token": "anything"}).status_code == 200
+    assert client.get("/api/admin/data", headers={"X-Admin-Token": "x"}).status_code == 200
+    assert client.post("/admin/reset", query_string={"scope": "test"}).status_code == 200
+    r = client.post("/api/studio/save", json={"title": "Open Study", "cfg": PILOT_CFG})
+    assert r.status_code == 200 and r.get_json()["slug"] == "open-study"
+    assert "token" not in client.get("/api/admin/data").get_json()
 
 
-def test_login_session_unlocks_everything(client, token):
-    assert client.get("/login").status_code == 200
-    r = client.post("/login", data={"token": "wrong", "next": "/studio/"})
-    assert r.status_code == 401 and b"not correct" in r.data
-    r = client.post("/login", data={"token": token, "next": "/studio/#beacon"})
-    assert r.status_code == 302 and r.headers["Location"] == "/studio/#beacon"
-    # no token anywhere from here on
-    for path in ("/studio/", "/admin/", "/api/studio/list", "/api/admin/data", "/admin/export.csv"):
-        assert client.get(path).status_code == 200, path
+def test_login_and_logout_are_gone(client):
+    assert client.get("/login").status_code == 404
+    assert client.post("/login", data={"token": "x"}).status_code == 404
+    assert client.get("/logout").status_code == 404
+
+
+def test_drafts_preview_in_test_mode_only(client):
     assert client.post("/api/studio/save", json={"title": "Draft X", "cfg": {
         "sections": [{"id": "S1", "title": "A"}],
         "questions": [{"id": "Q1", "section": "S1", "type": "open_text", "stem": "x"}]}}).status_code == 200
-    assert client.get("/survey/draft-x").status_code == 200            # drafts previewable when signed in
-    assert b"Research-team view" in client.get("/survey/draft-x/test").data
-    # open redirects are refused
-    r = client.post("/login", data={"token": token, "next": "https://evil.example/"})
-    assert r.headers["Location"] == "/"
-    client.get("/logout")
-    assert client.get("/studio/").status_code == 302
+    # the respondent link stays closed until launch, and points the team at the preview
+    r = client.get("/survey/draft-x")
+    assert r.status_code == 403
+    assert b'href="/survey/draft-x/test"' in r.data and b"/login" not in r.data
+    # ...while test mode renders the draft, with the team strip
+    r = client.get("/survey/draft-x/test")
+    assert r.status_code == 200
+    assert b"Research-team view" in r.data and b"draft preview" in r.data
+    # closed studies behave the same way
+    client.post("/api/studio/status", json={"slug": "draft-x", "status": "closed"})
     assert client.get("/survey/draft-x").status_code == 403
-
-
-def test_login_without_cookies_falls_back_to_url_token(client, token):
-    # no prior GET /login -> no probe cookie -> token is carried in the redirect URL
-    r = client.post("/login", data={"token": token, "next": "/studio/?x=1#beacon"})
-    assert r.status_code == 302 and r.headers["Location"] == f"/studio/?x=1&token={token}#beacon"
-    r = client.get("/", query_string={"token": token})
-    assert b"Signed in" in r.data
+    assert client.get("/survey/draft-x/test").status_code == 200
 
 
 def test_respondents_never_see_team_chrome(client):
     r = client.get("/survey/")
     assert b"Research-team view" not in r.data and b"appnav" not in r.data
+    # the test-mode link is the team's view and carries the app switcher
+    r = client.get("/survey/test")
+    assert b"Research-team view" in r.data and b"appnav" in r.data
+    assert b"stored as T-codes" in r.data
 
 
 # ---------------------------------------------------------------- respondent flow
@@ -152,7 +145,7 @@ def test_start_assigns_codes_and_design(client):
     assert len(b["alt_positions"]) == 9
 
 
-def test_save_submit_progress_roundtrip(client, token):
+def test_save_submit_progress_roundtrip(client):
     s = _start(client)
     sid = s["session_id"]
     r = client.post("/api/save", json={"session_id": sid, "elapsed_seconds": 30,
@@ -168,7 +161,7 @@ def test_save_submit_progress_roundtrip(client, token):
     assert body["ok"] and body["respondent_code"] == "T001"
     assert "speeder" in body["flags"]           # 60 s << 480 s minimum
 
-    data = client.get("/api/admin/data", query_string={"token": token}).get_json()
+    data = client.get("/api/admin/data").get_json()
     assert data["counts"] == {"total": 1, "complete": 1, "screened_out": 0, "in_progress": 0}
     assert client.get("/api/progress", query_string={"sid": "nope"}).get_json() == \
         {"exists": False}
@@ -181,13 +174,13 @@ def test_unknown_session_rejected(client):
                        content_type="application/json").status_code == 400
 
 
-def test_voice_upload(client, token, app):
+def test_voice_upload(client, app):
     s = _start(client)
     blob = base64.b64encode(b"\x1aE\xdf\xa3fake-webm").decode()
     r = client.post("/api/voice", json={"session_id": s["session_id"], "qid": "Q8b",
                                         "ext": "webm", "data": blob})
     assert r.get_json()["file"] == "beacon__T001_Q8b.webm"
-    r = client.get("/admin/voice/beacon__T001_Q8b.webm", query_string={"token": token})
+    r = client.get("/admin/voice/beacon__T001_Q8b.webm")
     assert r.status_code == 200 and r.mimetype == "audio/webm"
     bad = client.post("/api/voice", json={"session_id": s["session_id"], "qid": "../x",
                                           "data": blob})
@@ -198,19 +191,18 @@ def test_voice_upload(client, token, app):
 
 
 # ---------------------------------------------------------------- studio lifecycle
-def test_studio_create_launch_respond_delete(client, token):
-    q = {"token": token}
-    r = client.post("/api/studio/save", query_string=q,
+def test_studio_create_launch_respond_delete(client):
+    r = client.post("/api/studio/save",
                     json={"title": "Pilot Study", "cfg": PILOT_CFG})
     assert r.get_json() == {"ok": True, "slug": "pilot-study"}
 
-    # drafts are hidden from the public but visible with the preview token
+    # drafts are closed on the respondent link but previewable in test mode
     assert client.get("/survey/pilot-study").status_code == 403
-    assert client.get("/survey/pilot-study", query_string={"preview": token}).status_code == 200
+    assert client.get("/survey/pilot-study/test").status_code == 200
     r = client.post("/api/start", json={"study": "pilot-study"})
     assert r.status_code == 403 and r.get_json()["error"] == "study not live"
 
-    r = client.post("/api/studio/status", query_string=q,
+    r = client.post("/api/studio/status",
                     json={"slug": "pilot-study", "status": "live"})
     assert r.get_json()["ok"]
     s = _start(client, "pilot-study")
@@ -223,44 +215,42 @@ def test_studio_create_launch_respond_delete(client, token):
     assert set(done["flags"]) == {"speeder", "gibberish_verbatim_Q2"}
 
     # data is isolated per study
-    listing = {x["slug"]: x for x in client.get("/api/studio/list",
-                                                 query_string=q).get_json()}
+    listing = {x["slug"]: x for x in client.get("/api/studio/list").get_json()}
     assert listing["pilot-study"]["complete"] == 1
     assert listing["beacon"]["started"] == 0
 
     csv_txt = client.get("/admin/export.csv",
-                         query_string={"token": token, "study": "pilot-study"}).data.decode()
+                         query_string={"study": "pilot-study"}).data.decode()
     header, row = csv_txt.splitlines()[:2]
     rec = dict(zip(header.split(","), row.split(",")))
     assert rec["Q1"] == "2" and rec["Q1_text"] == "B" and rec["is_test"] == "test"
     assert "gibberish_verbatim_Q2" in rec["qc_flags"]
 
-    assert client.post("/api/studio/delete", query_string=q,
+    assert client.post("/api/studio/delete",
                        json={"slug": "beacon"}).status_code == 400
-    assert client.post("/api/studio/delete", query_string=q,
+    assert client.post("/api/studio/delete",
                        json={"slug": "pilot-study"}).get_json()["ok"]
     assert client.get("/survey/pilot-study").status_code == 404
 
 
-def test_studio_validation(client, token):
-    q = {"token": token}
+def test_studio_validation(client):
     bad = dict(PILOT_CFG, questions=[{"id": "Q1", "section": "S1", "type": "open_text",
                                       "stem": ""}] * 2)
-    r = client.post("/api/studio/save", query_string=q, json={"title": "x", "cfg": bad})
+    r = client.post("/api/studio/save", json={"title": "x", "cfg": bad})
     assert r.status_code == 400 and "duplicate" in r.get_json()["error"]
     bad = dict(PILOT_CFG, questions=[{"id": "Q1", "section": "NOPE", "type": "open_text",
                                       "stem": ""}])
-    r = client.post("/api/studio/save", query_string=q, json={"title": "x", "cfg": bad})
+    r = client.post("/api/studio/save", json={"title": "x", "cfg": bad})
     assert r.status_code == 400 and "unknown section" in r.get_json()["error"]
-    r = client.post("/api/studio/status", query_string=q,
+    r = client.post("/api/studio/status",
                     json={"slug": "beacon", "status": "bogus"})
     assert r.status_code == 400
 
 
-def test_make_conjoint_is_balanced(client, token):
+def test_make_conjoint_is_balanced(client):
     attrs = [{"id": "price", "levels": ["$1", "$2", "$3"], "higher_is_bad": True},
              {"id": "efficacy", "levels": ["low", "mid", "high"]}]
-    r = client.post("/api/studio/make_conjoint", query_string={"token": token},
+    r = client.post("/api/studio/make_conjoint",
                     json={"attributes": attrs, "n_tasks": 9, "seed": 3})
     d = r.get_json()
     assert len(d["tasks"]) == 9 and all(len(t) == 3 for t in d["tasks"])
@@ -276,18 +266,18 @@ def test_make_conjoint_is_balanced(client, token):
                 gx = (2 - x["price"], x["efficacy"])
                 gy = (2 - y["price"], y["efficacy"])
                 assert not (gx[0] >= gy[0] and gx[1] >= gy[1] and gx != gy), task
-    r = client.post("/api/studio/make_conjoint", query_string={"token": token},
+    r = client.post("/api/studio/make_conjoint",
                     json={"attributes": [{"id": "x"}]})
     assert r.status_code == 400
 
 
 # ---------------------------------------------------------------- exports & reset
-def test_xlsx_export_and_reset(client, token):
+def test_xlsx_export_and_reset(client):
     _start(client, is_test=True)
     real = _start(client, is_test=False)
     client.post("/api/submit", json={"session_id": real["session_id"], "elapsed_seconds": 900})
 
-    r = client.get("/admin/export.xlsx", query_string={"token": token, "scope": "all"})
+    r = client.get("/admin/export.xlsx", query_string={"scope": "all"})
     assert r.status_code == 200 and r.data[:2] == b"PK"
     assert "spreadsheetml" in r.mimetype
     assert r.headers["X-Export-Backend"] in ("openpyxl", "stdlib")
@@ -296,16 +286,16 @@ def test_xlsx_export_and_reset(client, token):
             "Data dictionary"} <= set(wb.sheetnames)
     assert wb["Responses"].max_row - 1 == 2
 
-    r = client.get("/admin/export.json", query_string={"token": token, "scope": "real"})
+    r = client.get("/admin/export.json", query_string={"scope": "real"})
     body = r.get_json()
     assert [x["respondent_code"] for x in body] == ["R001"]
     assert "flat" not in body[0]
 
-    r = client.post("/admin/reset", query_string={"token": token, "scope": "test"})
+    r = client.post("/admin/reset", query_string={"scope": "test"})
     assert r.get_json()["deleted_respondents"] == 1
-    r = client.post("/admin/reset", query_string={"token": token, "scope": "bogus"})
+    r = client.post("/admin/reset", query_string={"scope": "bogus"})
     assert r.status_code == 400
-    data = client.get("/api/admin/data", query_string={"token": token}).get_json()
+    data = client.get("/api/admin/data").get_json()
     assert data["counts"]["total"] == 1
 
 
@@ -316,8 +306,8 @@ def _mp3_bytes():
     return frame * 8
 
 
-def test_narration_upload_serve_delete(client, token, app):
-    q = {"token": token, "study": "beacon"}
+def test_narration_upload_serve_delete(client, app):
+    q = {"study": "beacon"}
     r = client.post("/api/studio/narration", query_string=q,
                     data={"file": (io.BytesIO(_mp3_bytes()), "welcome.mp3")},
                     content_type="multipart/form-data")
@@ -333,36 +323,35 @@ def test_narration_upload_serve_delete(client, token, app):
     assert r.status_code == 206 and len(r.data) == 100
 
     # attach to a scene, save, and the spec exposes it to the survey
-    study = client.get("/api/studio/study", query_string={"token": token, "slug": "beacon"}).get_json()
+    study = client.get("/api/studio/study", query_string={"slug": "beacon"}).get_json()
     cfg = study["cfg"]
     cfg["explainer_scenes"] = [{"id": "sc_1", "art": "dosing", "title": "Dose", "caption": "Once daily",
                                 "src": body["src"], "seconds": body["seconds"]},
                                {"id": "sc_2", "art": "generic", "title": "Custom", "caption": "Anything"}]
-    r = client.post("/api/studio/save", query_string={"token": token},
+    r = client.post("/api/studio/save",
                     json={"slug": "beacon", "title": study["title"], "cfg": cfg})
     assert r.get_json()["ok"]
     spec = client.get("/api/spec/beacon").get_json()
     assert [s["art"] for s in spec["explainer_scenes"]] == ["dosing", "generic"]
     assert spec["explainer_scenes"][0]["src"] == body["src"]
 
-    r = client.post("/api/studio/narration/delete", query_string={"token": token},
+    r = client.post("/api/studio/narration/delete",
                     json={"study": "beacon", "clip": body["clip"]})
     assert r.get_json() == {"ok": True, "removed": 1}
     assert client.get(body["src"]).status_code == 404
 
 
-def test_narration_upload_validation(client, token):
-    q = {"token": token, "study": "beacon"}
+def test_narration_upload_validation(client):
+    q = {"study": "beacon"}
     assert client.post("/api/studio/narration", query_string=q).status_code == 400
     r = client.post("/api/studio/narration", query_string=q,
                     data={"file": (io.BytesIO(b"x"), "notes.txt")},
                     content_type="multipart/form-data")
     assert r.status_code == 400 and "unsupported" in r.get_json()["error"]
-    r = client.post("/api/studio/narration", query_string={"token": token, "study": "nope"},
+    r = client.post("/api/studio/narration", query_string={"study": "nope"},
                     data={"file": (io.BytesIO(b"x"), "a.mp3")}, content_type="multipart/form-data")
     assert r.status_code == 404
-    assert client.post("/api/studio/narration", query_string={"study": "beacon"}).status_code == 403
-    r = client.post("/api/studio/narration/delete", query_string={"token": token},
+    r = client.post("/api/studio/narration/delete",
                     json={"study": "beacon", "clip": "../../etc"})
     assert r.status_code == 400
     assert client.get("/narration/beacon/missing.mp3").status_code == 404
@@ -370,16 +359,16 @@ def test_narration_upload_validation(client, token):
 
 
 # ---------------------------------------------------------------- question editor features
-def test_rich_text_is_sanitised_on_save(client, token):
+def test_rich_text_is_sanitised_on_save(client):
     cfg = {"sections": [{"id": "S1", "title": "A"}],
            "questions": [{"id": "Q1", "section": "S1", "type": "single_select",
                           "stem": "old", "stem_html": '<b onclick="x()">Hi</b><script>evil()</script>'
                           '<span style="color:#f00;position:absolute">red</span> {Q0}',
                           "help_html": '<img src=x onerror=alert(1)>',
                           "options": [{"code": 1, "label": "A"}, {"code": 99, "label": "None", "exclusive": True}]}]}
-    r = client.post("/api/studio/save", query_string={"token": token}, json={"title": "Rich", "cfg": cfg})
+    r = client.post("/api/studio/save", json={"title": "Rich", "cfg": cfg})
     assert r.get_json()["ok"]
-    saved = client.get("/api/studio/study", query_string={"token": token, "slug": "rich"}).get_json()["cfg"]
+    saved = client.get("/api/studio/study", query_string={"slug": "rich"}).get_json()["cfg"]
     q = saved["questions"][0]
     assert q["stem_html"] == '<b>Hi</b>evil()<span style="color: #f00">red</span> {Q0}'
     assert "help_html" not in q                      # only an unsafe img -> nothing left
@@ -388,8 +377,8 @@ def test_rich_text_is_sanitised_on_save(client, token):
     assert spec["questions"][0]["options"][1]["exclusive"] is True
 
 
-def test_media_upload_serve_delete(client, token):
-    q = {"token": token, "study": "beacon"}
+def test_media_upload_serve_delete(client):
+    q = {"study": "beacon"}
     png = b"\x89PNG\r\n\x1a\n" + b"0" * 64
     r = client.post("/api/studio/media", query_string=q,
                     data={"file": (io.BytesIO(png), "diagram.png")}, content_type="multipart/form-data")
@@ -406,29 +395,29 @@ def test_media_upload_serve_delete(client, token):
                     content_type="multipart/form-data")
     assert r.status_code == 400
     assert client.post("/api/studio/media", data={"file": (io.BytesIO(png), "a.png")},
-                       content_type="multipart/form-data").status_code == 403
-    r = client.post("/api/studio/media/delete", query_string={"token": token},
+                       content_type="multipart/form-data").status_code == 404   # no study given
+    r = client.post("/api/studio/media/delete",
                     json={"study": "beacon", "file": j["file"]})
     assert r.get_json()["removed"] == 1
     assert client.get(j["src"]).status_code == 404
 
 
-def test_export_includes_order_and_logic(client, token):
+def test_export_includes_order_and_logic(client):
     cfg = {"sections": [{"id": "S1", "title": "A"}],
            "questions": [{"id": "Q1", "section": "S1", "type": "multi_select", "randomize": "shuffle",
                           "options": [{"code": 1, "label": "A"}, {"code": 2, "label": "B"}], "stem": "pick"},
                          {"id": "Q2", "section": "S1", "type": "open_text", "stem": "why",
                           "show_if": {"match": "all", "rules": [{"q": "Q1", "op": "selected", "value": "2"}]}}]}
-    client.post("/api/studio/save", query_string={"token": token}, json={"title": "Logic", "cfg": cfg})
-    client.post("/api/studio/status", query_string={"token": token}, json={"slug": "logic", "status": "live"})
+    client.post("/api/studio/save", json={"title": "Logic", "cfg": cfg})
+    client.post("/api/studio/status", json={"slug": "logic", "status": "live"})
     s = _start(client, "logic")
     client.post("/api/submit", json={"session_id": s["session_id"], "elapsed_seconds": 30,
                                      "answers": {"Q1": {"codes": [2, 1], "_order": "2,1"}, "Q2": {"_": "because"}}})
     import csv as _csv
-    csv_txt = client.get("/admin/export.csv", query_string={"token": token, "study": "logic"}).data.decode()
+    csv_txt = client.get("/admin/export.csv", query_string={"study": "logic"}).data.decode()
     rec = next(_csv.DictReader(io.StringIO(csv_txt)))
     assert rec["Q1_order_shown"] == "2,1" and rec["Q1"] == "1;2"
     import openpyxl
-    wb = openpyxl.load_workbook(io.BytesIO(client.get("/admin/export.xlsx", query_string={"token": token, "study": "logic"}).data))
+    wb = openpyxl.load_workbook(io.BytesIO(client.get("/admin/export.xlsx", query_string={"study": "logic"}).data))
     dd = [tuple(r) for r in wb["Data dictionary"].iter_rows(values_only=True)]
     assert any(r[4] == "(show-if)" and "Q1 selected 2" in str(r[5]) for r in dd)

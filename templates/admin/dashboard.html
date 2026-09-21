@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PROJECT BEACON — Admin</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=260910f">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260910f">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=260921a">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260921a">
 </head>
 <body>
 <header class="topbar">
@@ -77,6 +77,27 @@
     <div class="tablewrap"><table id="recent"></table></div>
   </section>
 
+  <section class="panel" id="ai-panel">
+    <h2>Written answers &mdash; AI &amp; proofreading check
+      <span class="hint">every open-text answer, worst first</span></h2>
+    <div id="ai-summary"></div>
+    <div class="ai-filters">
+      <label>Question <select id="ai-qid"></select></label>
+      <label>Verdict
+        <select id="ai-verdict">
+          <option value="flagged">Flagged only</option>
+          <option value="likely_ai">Likely AI-generated</option>
+          <option value="possible_ai">Possible AI-generated</option>
+          <option value="">Every written answer</option>
+        </select>
+      </label>
+      <label>Answer contains <input id="ai-search" type="search" placeholder="search text"></label>
+      <button class="btn" id="ai-apply">Apply</button>
+      <span class="hint">Also exported as the <b>Verbatim AI check</b> sheet of the workbook.</span>
+    </div>
+    <div id="ai-list"></div>
+  </section>
+
   <section class="panel">
     <h2>What is in the Excel export</h2>
     <ul class="sheets">
@@ -89,13 +110,16 @@
           mixed logit model.</li>
       <li><strong>Screen-outs</strong> — who was terminated, at which question, and why.</li>
       <li><strong>QC flags</strong> — speeders, attention-check failures, straight-liners,
-          uniform conjoint choosers.</li>
+          uniform conjoint choosers, thin / gibberish verbatims and AI-generated answers.</li>
+      <li><strong>Verbatim AI check</strong> — one row per written answer: AI suspicion score
+          and verdict, the evidence behind it, paste / keystroke telemetry, proofreading
+          notes and cross-respondent duplicates.</li>
       <li><strong>Data dictionary</strong> — every question, item, code and scale.</li>
     </ul>
   </section>
 </main>
 
 <div class="toast" id="toast" hidden></div>
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=260910f"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=260921a"></script>
 </body>
 </html>

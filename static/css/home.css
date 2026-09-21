@@ -45,8 +45,6 @@ main{max-width:1100px;margin:0 auto;padding:28px 22px 40px}
 .app-studio code{background:var(--studio-soft);color:var(--studio)}
 .app-admin{border-top-color:var(--warn)}
 .app-admin code{background:var(--warn-soft);color:var(--warn)}
-.needs-token{opacity:.72}
-.lock{color:var(--warn);font-weight:600}
 .studies{margin-top:34px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 22px}
 .studies h3{margin:0 0 12px;font-size:16px}
 table{width:100%;border-collapse:collapse;font-size:14px}
@@ -61,26 +59,11 @@ small{color:var(--muted)}
 .pill-closed{background:var(--bad-soft);color:var(--bad)}
 .foot{text-align:center;color:var(--muted);font-size:12px;padding:0 0 28px}
 
-/* notices + sign-in page */
-.notice{background:var(--accent-soft);color:var(--accent);border:1px solid #cfe2ea;border-radius:10px;
-  padding:10px 14px;font-size:13.5px;margin-bottom:20px}
-.notice.ok{background:var(--good-soft);color:var(--good);border-color:#cde9d8}
-.notice.bad{background:var(--bad-soft);color:var(--bad);border-color:#f2cfcc}
-.notice a{color:inherit;font-weight:700}
-.login-main{max-width:520px;padding-top:48px}
-.login-card{display:flex;flex-direction:column;gap:10px;background:#fff;border:1px solid var(--line);
+/* message panel (e.g. "study not launched yet") */
+.panel-main{max-width:520px;padding-top:48px}
+.panel-card{display:flex;flex-direction:column;gap:10px;background:#fff;border:1px solid var(--line);
   border-radius:14px;padding:26px 26px 22px;border-top:5px solid var(--studio);
   box-shadow:0 1px 2px rgba(16,32,48,.05)}
-.login-card h1{margin:0;font-size:22px}
-.login-card p{margin:0;color:var(--muted);font-size:14px}
-.login-card label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--muted);margin-top:8px}
-.login-card input{font:inherit;padding:10px 12px;border-radius:8px;border:1px solid var(--line)}
-.login-card input:focus{outline:2px solid var(--accent-2);border-color:transparent}
-.login-card button{font:inherit;font-weight:700;padding:10px;border-radius:8px;border:0;cursor:pointer;
-  background:var(--accent);color:#fff}
-.login-card code{background:var(--accent-soft);color:var(--accent);padding:1px 6px;border-radius:5px;font-size:12.5px}
-.login-err{color:var(--bad);font-size:13px;font-weight:600}
-.login-ok{background:var(--good-soft);color:var(--good);border-radius:8px;padding:8px 10px;font-size:13px}
-.login-ok a{color:inherit;font-weight:700}
-.login-hint{font-size:12.5px;color:var(--muted);line-height:1.5;border-top:1px solid var(--line);padding-top:12px;margin-top:6px}
+.panel-card h1{margin:0;font-size:22px}
+.panel-card p{margin:0;color:var(--muted);font-size:14px}
+.panel-card a{color:var(--accent);font-weight:700}

@@ -1,5 +1,5 @@
 """
-STUDIO  -  the survey builder (token protected: ?token=<ADMIN_TOKEN>).
+STUDIO  -  the survey builder.
 
 Page
     GET  /studio/                          builder UI
@@ -29,34 +29,35 @@ import shutil
 from flask import Blueprint, abort, current_app, jsonify, render_template, request, send_from_directory
 from werkzeug.utils import secure_filename
 
-from core.auth import admin_required
 from core.conjoint import make_conjoint
+from core.i18n import (LANGUAGES, coverage, default_language, extract_strings,
+                       valid_language)
+LANGUAGES_MAP = {c: {"name": n, "native": nv, "dir": d} for c, n, nv, d in LANGUAGES}
 from core.narration import clip_duration
+from core.outline import build_outline
 from core.reporting import analysis_for
+from core.translator import TranslationError, translate_string
 from models import Study, StudyError
 
 AUDIO_EXT = {"mp3": "audio/mpeg", "m4a": "audio/mp4", "mp4": "audio/mp4",
              "ogg": "audio/ogg", "opus": "audio/ogg", "wav": "audio/wav", "webm": "audio/webm"}
 
-from .helpers import error, json_body, records, study_arg
+from .helpers import attachment, error, json_body, records, study_arg, stamp
 
 bp = Blueprint("studio", __name__)
 
 
 @bp.get("/studio/")
-@admin_required("page")
 def page():
     return render_template("studio/studio.html")
 
 
 @bp.get("/api/studio/list")
-@admin_required()
 def list_studies():
     return jsonify(Study.list_with_counts())
 
 
 @bp.get("/api/studio/study")
-@admin_required()
 def get_study():
     study = Study.get(request.args.get("slug") or "")
     if not study:
@@ -66,14 +67,12 @@ def get_study():
 
 
 @bp.get("/api/studio/analysis")
-@admin_required()
 def analysis():
     slug = study_arg()
     return jsonify(analysis_for(records(slug), Study.cfg_of(slug)))
 
 
 @bp.post("/api/studio/save")
-@admin_required()
 def save():
     try:
         return jsonify({"ok": True, "slug": Study.save(json_body())})
@@ -82,7 +81,6 @@ def save():
 
 
 @bp.post("/api/studio/status")
-@admin_required()
 def status():
     body = json_body()
     try:
@@ -93,11 +91,10 @@ def status():
 
 
 @bp.post("/api/studio/delete")
-@admin_required()
 def delete():
     slug = json_body().get("slug") or ""
     try:
-        Study.delete(slug)
+        Study.delete_with_children(slug)
     except StudyError as e:
         return error(e)
     # uploaded narration clips belong to the study - remove them with it
@@ -107,8 +104,191 @@ def delete():
     return jsonify({"ok": True})
 
 
+@bp.get("/api/studio/languages")
+def languages():
+    """The globalisation catalogue: every approved field language."""
+    return jsonify({"default": "en-US",
+                    "languages": [{"code": c, "name": n, "native": nv, "dir": d}
+                                  for c, n, nv, d in LANGUAGES]})
+
+
+def _base_of(study):
+    """The question config a study translates: its own, or its parent's when it is a
+    translation child.  Children therefore inherit every parent edit automatically."""
+    if study.is_child():
+        parent = study.parent_study()
+        return parent.cfg if parent else study.cfg
+    return study.cfg
+
+
+@bp.get("/api/studio/children")
+def children():
+    """The translation children of a parent study."""
+    study = Study.get(study_arg())
+    if not study:
+        return jsonify({"error": "unknown study"}), 404
+    return jsonify({"children": [
+        {"slug": ch.slug, "language": ch.cfg.get("language"),
+         "title": ch.title, "translations": ch.cfg.get("translations") or {},
+         "complete": 0} for ch in Study.children_of(study.slug)]})
+
+
+@bp.post("/api/studio/globalize")
+def globalize():
+    """Create (or return) the translation child for one language of a parent study."""
+    body = json_body()
+    parent = Study.get(body.get("slug") or "")
+    lang = body.get("lang") or ""
+    if not parent or parent.is_child():
+        return jsonify({"error": "unknown parent study"}), 404
+    if not valid_language(lang) or lang == default_language(parent.cfg):
+        return jsonify({"error": "bad language"}), 400
+    slug = f"{parent.slug}--{lang.lower()}"
+    if Study.get(slug):
+        return jsonify({"ok": True, "slug": slug, "existing": True})
+    meta = LANGUAGES_MAP.get(lang, {})
+    cfg = {"parent": parent.slug, "language": lang,
+           "translations": {lang: dict((parent.cfg.get("translations") or {}).get(lang) or {})},
+           "title": f"{parent.title} \u2013 {meta.get('native', lang)}"}
+    Study.save({"slug": slug, "title": cfg["title"], "cfg": cfg})
+    return jsonify({"ok": True, "slug": slug})
+
+
+@bp.get("/api/studio/strings")
+def strings():
+    """The respondent-visible strings plus one language's translations, for the
+    Globalize panel.  Team-facing text never appears here, so it can't be translated."""
+    study = Study.get(study_arg())
+    if not study:
+        return jsonify({"error": "unknown study"}), 404
+    base = _base_of(study)
+    lang = request.args.get("lang") or (study.cfg.get("language") if study.is_child() else "") or ""
+    strings = extract_strings(base)
+    table = (study.cfg.get("translations") or {}).get(lang) or {}
+    merged = dict(base)
+    if lang:
+        merged["translations"] = {lang: table}
+    return jsonify({"strings": strings, "default_language": default_language(base),
+                    "language": lang, "translations": table,
+                    "parent": study.cfg.get("parent") or "",
+                    "coverage": coverage(merged, lang) if lang else None,
+                    "languages": sorted((study.cfg.get("translations") or {}).keys())})
+
+
+@bp.post("/api/studio/move")
+def move():
+    body = json_body()
+    old_slug = body.get("slug") or ""
+    kids = [ch.slug for ch in Study.children_of(old_slug)]
+    try:
+        new_slug = Study.move(old_slug, body.get("new_slug") or "")
+    except StudyError as e:
+        return error(e)
+    for kslug in kids:                      # keep translation children attached
+        ch = Study.get(kslug)
+        ch.cfg["parent"] = new_slug
+        Study.save({"slug": ch.slug, "title": ch.title, "cfg": ch.cfg})
+    # uploaded media and narration clips are keyed by slug - they travel with the study
+    for folder in (_media_dir, _narration_dir):
+        src, dst = folder(secure_filename(old_slug)), folder(secure_filename(new_slug))
+        if old_slug != new_slug and os.path.isdir(src):
+            shutil.move(src, dst)
+    return jsonify({"ok": True, "slug": new_slug})
+
+
+@bp.get("/api/studio/outline.docx")
+def outline():
+    """Download Word Outline - a client-circulation .docx of the questionnaire."""
+    study = Study.get(study_arg())
+    if not study:
+        return jsonify({"error": "unknown study"}), 404
+    lang = request.args.get("lang") or (study.cfg.get("language") if study.is_child() else None)
+    data = build_outline(_base_of(study), lang)
+    return attachment(data,
+                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                      f"{study.slug}_outline_{lang or default_language(study.cfg)}_{stamp()}.docx")
+
+
+def _merged_for(study, lang: str) -> dict:
+    study = Study.get(study.slug) or study          # re-read: translations may have saved
+    base = _base_of(study)
+    merged = dict(base)
+    merged["translations"] = {lang: (study.cfg.get("translations") or {}).get(lang) or {}}
+    return merged
+
+
+def _save_translations(slug: str, lang: str, strings: dict) -> None:
+    study = Study.get(slug)
+    cfg = study.cfg
+    table = cfg.setdefault("translations", {}).setdefault(lang, {})
+    known = {x["key"] for x in extract_strings(_base_of(study))}
+    for key, text in (strings or {}).items():
+        if key in known:
+            if (text or "").strip():
+                table[key] = str(text)[:MAX_TR]
+            else:
+                table.pop(key, None)
+    if not table:
+        cfg["translations"].pop(lang, None)
+    Study.save({"slug": slug, "title": study.title, "cfg": cfg})
+
+
+MAX_TR = 4000
+
+
+@bp.post("/api/studio/translate")
+def translate():
+    """Manual translation: save respondent-visible strings for one language."""
+    body = json_body()
+    slug, lang = body.get("slug") or "", body.get("lang") or ""
+    study = Study.get(slug)
+    if not study:
+        return jsonify({"error": "unknown study"}), 404
+    if not valid_language(lang) or lang == default_language(_base_of(study)):
+        return jsonify({"error": "bad language"}), 400
+    _save_translations(slug, lang, body.get("strings") or {})
+    return jsonify({"ok": True, "coverage": coverage(_merged_for(study, lang), lang)})
+
+
+@bp.post("/api/studio/autotranslate")
+def autotranslate():
+    """AI-translate respondent-visible strings that have no manual translation yet.
+
+    Keys may be passed to translate a subset; by default every missing string is done.
+    Strings that already have a manual translation are never overwritten.  On a network
+    failure each string is reported in ``failed`` and left for manual translation.
+    """
+    body = json_body()
+    slug, lang = body.get("slug") or "", body.get("lang") or ""
+    study = Study.get(slug)
+    if not study:
+        return jsonify({"error": "unknown study"}), 404
+    cfg = study.cfg
+    src = default_language(_base_of(study))
+    if not valid_language(lang) or lang == src:
+        return jsonify({"error": "bad language"}), 400
+    table = (cfg.get("translations") or {}).get(lang) or {}
+    want = body.get("keys")
+    strings, failed, done = {}, {}, 0
+    for x in extract_strings(_base_of(study)):
+        if want is not None and x["key"] not in want:
+            continue
+        if (table.get(x["key"]) or "").strip():
+            continue
+        html = x["key"].endswith("_html")
+        try:
+            strings[x["key"]] = translate_string(x["text"], lang, src.split("-")[0],
+                                                 html=html)
+            done += 1
+        except TranslationError as e:
+            failed[x["key"]] = str(e)
+    if strings:
+        _save_translations(slug, lang, strings)
+    return jsonify({"ok": True, "translated": done, "failed": failed,
+                    "coverage": coverage(_merged_for(study, lang), lang)})
+
+
 @bp.post("/api/studio/make_conjoint")
-@admin_required()
 def conjoint():
     body = json_body()
     try:
@@ -124,7 +304,6 @@ def _narration_dir(slug: str) -> str:
 
 
 @bp.post("/api/studio/narration")
-@admin_required()
 def upload_narration():
     slug = request.args.get("study") or ""
     if not Study.get(slug):
@@ -153,7 +332,6 @@ def upload_narration():
 
 
 @bp.post("/api/studio/narration/delete")
-@admin_required()
 def delete_narration():
     body = json_body()
     slug, clip = str(body.get("study") or ""), str(body.get("clip") or "")
@@ -181,7 +359,6 @@ def _media_dir(slug: str) -> str:
 
 
 @bp.post("/api/studio/media")
-@admin_required()
 def upload_media():
     slug = request.args.get("study") or ""
     if not Study.get(slug):
@@ -209,7 +386,6 @@ def upload_media():
 
 
 @bp.post("/api/studio/media/delete")
-@admin_required()
 def delete_media():
     body = json_body()
     slug, name = str(body.get("study") or ""), os.path.basename(str(body.get("file") or ""))

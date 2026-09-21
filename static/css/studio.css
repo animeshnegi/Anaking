@@ -321,8 +321,8 @@ a{color:var(--accent2)}
 table.st-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .st-tbl th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:6px 8px;border-bottom:2px solid var(--line)}
 .st-tbl td{padding:6px 8px;border-bottom:1px solid var(--line2)}
-.st-bar{height:8px;border-radius:5px;background:var(--line2);overflow:hidden}
-.st-bar i{display:block;height:100%;background:linear-gradient(90deg,#7fd4f0,#12789e)}
+.st-meter{height:8px;border-radius:5px;background:var(--line2);overflow:hidden}
+.st-meter i{display:block;height:100%;background:linear-gradient(90deg,#7fd4f0,#12789e)}
 
 /* ---------- walkthrough (TPP) tab ---------- */
 .st-muted-note{font-size:12px;color:var(--muted)}
@@ -363,3 +363,57 @@ table.st-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
   .st-grid3,.st-grid4{grid-template-columns:1fr 1fr}
 }
 @media (max-width:640px){.st-grid2,.st-grid3,.st-grid4{grid-template-columns:1fr}.st-bar{padding:8px 12px}.st-tabs{padding:0 8px}}
+
+/* ---------- Survey options menu (builder bar) ---------- */
+.st-menu-wrap{position:relative}
+.st-menu{position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--line);
+  border-radius:12px;box-shadow:0 18px 44px rgba(12,32,48,.22);padding:6px;min-width:236px;z-index:60;display:flex;flex-direction:column}
+.st-menu button{text-align:left;background:none;border:0;padding:8px 12px;border-radius:8px;font:inherit;font-size:13.5px;color:var(--ink);cursor:pointer}
+.st-menu button:hover{background:var(--bg)}
+.st-menu button.danger{color:#b3362b}
+
+/* ---------- Globalize Survey panel ---------- */
+.st-langmodal{width:min(980px,100%)}
+.st-lang-list{display:flex;flex-direction:column;gap:8px;margin:10px 0 14px}
+.st-lang-row{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:9px 12px}
+.st-lang-row.on{border-color:var(--accent);background:#f6fbfd}
+.st-lang-row>span:first-child{min-width:190px;display:flex;flex-direction:column}
+.st-lang-row small{color:var(--muted)}
+.st-lang-bar{flex:1;height:8px;border-radius:99px;background:var(--line2);overflow:hidden;min-width:80px}
+.st-lang-bar i{display:block;height:100%;background:linear-gradient(90deg,#4fa3c7,#2e7d9e)}
+.st-lang-tools{display:flex;gap:6px}
+.st-lang-add{display:flex;gap:8px;align-items:center;margin-top:4px}
+.st-lang-add select{flex:1;max-width:340px}
+.st-lang-editor{border-top:1px solid var(--line);margin-top:6px;padding-top:12px}
+.st-lang-editor-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.st-lang-editor-head #lang-search{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;width:220px}
+.st-lang-grow{flex:1}
+.st-tr-table{max-height:46vh;overflow-y:auto;border:1px solid var(--line);border-radius:12px}
+.st-tr-row{display:grid;grid-template-columns:150px 1fr 1fr;gap:0;border-bottom:1px solid var(--line2)}
+.st-tr-row:last-child{border-bottom:0}
+.st-tr-row>span,.st-tr-row>textarea{padding:8px 10px;font-size:13px}
+.st-tr-head{background:var(--bg);font-weight:700;font-size:12px;color:var(--muted);position:sticky;top:0}
+.st-tr-ctx{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-tr-src{white-space:pre-wrap}
+.st-tr-row textarea{border:0;border-left:1px solid var(--line2);font:inherit;resize:vertical;background:#fffdf7}
+.st-tr-row textarea:focus{outline:2px solid #cfe3ec}
+
+/* back buttons: sub pages return to Questions */
+.st-backtab{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;
+  border-radius:999px;padding:5px 13px;font:inherit;font-size:12.5px;font-weight:700;color:var(--muted);
+  cursor:pointer;margin-bottom:10px}
+.st-backtab:hover{color:var(--ink);border-color:var(--faint)}
+.st-page-head{display:flex;flex-direction:column;align-items:flex-start}
+
+/* parent/child globalisation */
+.st-child-note{font-size:12px;color:var(--muted);background:var(--soft);border:1px solid var(--line);
+  border-radius:999px;padding:6px 12px}
+.st-child-badge{color:var(--accent);font-weight:700}
+
+/* translation children nested inside the parent card */
+.st-card-kids{margin:10px 0 2px;border-top:1px dashed var(--line);padding-top:8px}
+.st-kids-head{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.st-kid{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0}
+.st-kid-lang b{font-size:13px}
+.st-kid-lang small{display:block;color:var(--muted);font-size:11px}
+.st-kid-tools{display:flex;gap:6px}

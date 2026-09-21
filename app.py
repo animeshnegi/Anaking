@@ -2,7 +2,7 @@
 """
 PROJECT BEACON - survey research platform (Flask).
 
-    python3 app.py [--port 8000] [--host 0.0.0.0] [--admin-token TOKEN] [--debug]
+    python3 app.py [--port 8000] [--host 0.0.0.0] [--debug]
 
 Production:  gunicorn -w 2 -b 0.0.0.0:8000 "app:create_app()"
 
@@ -11,7 +11,7 @@ Project layout
     config.py       settings (env-overridable)
     models.py       SQLite schema + Study / Respondent / Answer models
     routes/         one module per app: home.py, survey.py, studio.py, admin.py
-    core/           domain logic: conjoint, QC rules, reporting, seed, xlsx, auth
+    core/           domain logic: conjoint, QC rules, reporting, seed, xlsx
     templates/      home.html + survey/  studio/  admin/
     static/         css/  js/  images/  audio/
     data/           survey.db (runtime) + design/ (conjoint design inputs)
@@ -34,7 +34,7 @@ from config import CONFIGS, DATA_DIR, UPLOAD_DIR, Config
 from core.seed import seed_beacon
 from routes import register_routes
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 
 
 class RegexConverter(BaseConverter):
@@ -61,11 +61,9 @@ def create_app(config: str | type | dict | None = None) -> Flask:
     elif config is not None:
         app.config.from_object(config)
     app.url_map.converters["regex"] = RegexConverter
-    # behind a reverse proxy / hosted preview: trust X-Forwarded-Proto so cookies and
-    # redirects know the site is HTTPS
+    # behind a reverse proxy / hosted preview: trust X-Forwarded-* so redirects and
+    # generated URLs know the real scheme and host
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-    from core.auth import IframeFriendlySessions
-    app.session_interface = IframeFriendlySessions()
     app.config["VERSION"] = __version__
 
     os.makedirs(os.path.dirname(app.config["DB_PATH"]) or DATA_DIR, exist_ok=True)
@@ -78,16 +76,12 @@ def create_app(config: str | type | dict | None = None) -> Flask:
 
     register_routes(app)
 
-    @app.context_processor
-    def _nav_context():
-        # every template can render the shared app switcher (templates/_nav.html)
-        from core.auth import is_signed_in, url_token
-        return {"signed_in": is_signed_in(), "url_token": url_token()}
-
     @app.after_request
     def _headers(resp):
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-        if request.path.startswith(("/api/", "/admin")):
+        # everything is always fresh - stale cached UI caused repeated "not working"
+        # reports; the platform is small enough that no-store costs nothing
+        if request.path.startswith(("/api/", "/admin", "/static/")) or "text/html" in (resp.mimetype or ""):
             resp.headers["Cache-Control"] = "no-store"
         return resp
 
@@ -105,15 +99,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="PROJECT BEACON survey platform")
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8000)))
     ap.add_argument("--host", default=os.environ.get("HOST", "0.0.0.0"))
-    ap.add_argument("--admin-token", default=None,
-                    help="Studio/admin token (default: $ADMIN_TOKEN or 'beacon-admin')")
     ap.add_argument("--debug", action="store_true", help="Flask debugger + auto-reload")
     args = ap.parse_args()
 
     app = create_app("development" if args.debug else None)
-    if args.admin_token:
-        app.config["ADMIN_TOKEN"] = args.admin_token
-    token = app.config["ADMIN_TOKEN"]
 
     shown = "localhost" if args.host in ("0.0.0.0", "::") else args.host
     base = f"http://{shown}:{args.port}"
@@ -121,10 +110,7 @@ def main() -> None:
     print(f"  home            : {base}/")
     print(f"  survey          : {base}/survey/      (test mode: {base}/survey/test)")
     print(f"  studio builder  : {base}/studio/")
-    print(f"  admin dashboard : {base}/admin/")
-    print(f"  team sign-in    : {base}/login      admin token: {token}"
-          + ("   (default - set ADMIN_TOKEN before going live)" if token == "beacon-admin" else ""),
-          flush=True)
+    print(f"  admin dashboard : {base}/admin/", flush=True)
     app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)
 
 
