@@ -243,10 +243,13 @@
     api("/api/studio/list").then(function (list) { studies = list; renderHome(); });
   }
   function renderHome() {
-    var live = studies.filter(function (s) { return s.status === "live"; }).length;
+    var tops = studies.filter(function (s) { return !s.parent; });
+    var kidsN = studies.length - tops.length;
+    var live = tops.filter(function (s) { return s.status === "live"; }).length;
     var html = '<div class="st-page"><div class="st-home">' +
       '<div class="st-hero"><div><h1>Your studies</h1><p>Draft questions, preview exactly what respondents see, then launch. ' +
-      studies.length + " stud" + (studies.length === 1 ? "y" : "ies") + (live ? " \u00B7 " + live + " live" : "") + "</p></div>" +
+      tops.length + " stud" + (tops.length === 1 ? "y" : "ies") + (live ? " \u00B7 " + live + " live" : "") +
+      (kidsN ? " \u00B7 " + kidsN + " translation" + (kidsN === 1 ? "" : "s") : "") + "</p></div>" +
       '<div class="st-hero-actions"><button class="st-btn big on" data-act="new">+ New study</button>' +
       '<button class="st-btn big" data-act="dup-beacon">Start from PROJECT BEACON</button></div></div>' +
       '<div class="st-home-tools"><input id="home-search" class="st-search" placeholder="Search studies\u2026" value="' + esc(homeSearch) + '">' +
@@ -257,16 +260,33 @@
   }
   function homeCards() {
     var q = homeSearch.trim().toLowerCase();
+    var kids = {};
+    studies.forEach(function (s) { if (s.parent) (kids[s.parent] = kids[s.parent] || []).push(s); });
+    function matchQ(x) { return !q || (x.title + " " + x.slug).toLowerCase().indexOf(q) >= 0; }
     var list = studies.filter(function (s) {
-      return (homeFilter === "all" || s.status === homeFilter) && (!q || (s.title + " " + s.slug).toLowerCase().indexOf(q) >= 0);
+      if (s.parent) return false;              // translations live inside the parent card
+      return (homeFilter === "all" || s.status === homeFilter) &&
+        (matchQ(s) || (kids[s.slug] || []).some(matchQ));
     });
     if (!list.length) return '<div class="st-empty">' + (studies.length ? "No studies match." : "No studies yet - create one to get started.") + "</div>";
     return list.map(function (s) {
       var pct = s.started ? Math.round(100 * s.complete / s.started) : 0;
+      var ch = kids[s.slug] || [];
+      var kidHtml = ch.length
+        ? '<div class="st-card-kids"><div class="st-kids-head">Translations \u00B7 ' + ch.length + " \u2014 child surveys of this study</div>" +
+          ch.map(function (k) {
+            return '<div class="st-kid"><span class="st-kid-lang"><b>' + esc(langMeta(k.language).native) + "</b>" +
+              "<small>/survey/" + esc(k.slug) + "</small></span>" +
+              '<span class="st-kid-tools">' +
+              '<button class="st-btn sm" data-act="open" data-slug="' + esc(k.slug) + '">Translate</button>' +
+              '<a class="st-btn sm" href="/survey/' + esc(k.slug) + '/test" target="_blank" rel="noopener">Preview</a>' +
+              '<button class="st-btn sm" data-act="copylink" data-slug="' + esc(k.slug) + '">Link</button>' +
+              "</span></div>";
+          }).join("") + "</div>"
+        : "";
       return '<div class="st-card" data-slug="' + esc(s.slug) + '">' +
         '<div class="st-card-top"><h3>' + esc(s.title) + '</h3><span class="st-pill ' + s.status + '">' + s.status + "</span></div>" +
-        '<div class="st-meta">/survey/' + esc(s.slug) + " \u00B7 updated " + esc(ago(s.updated_at)) + "</div>" +
-        (s.parent ? '<div class="st-meta st-child-badge">\u21B3 child of /' + esc(s.parent) + " \u00B7 " + esc(langMeta(s.language).native) + "</div>" : "") +
+        '<div class="st-meta">/survey/' + esc(s.slug) + " \u00B7 updated " + esc(ago(s.updated_at)) + "</div>" + kidHtml +
         '<div class="st-stats"><div><strong>' + s.started + "</strong><span>started</span></div><div><strong>" + s.complete + "</strong><span>complete</span></div>" +
         '<div class="st-stat-bar"><i style="width:' + pct + '%"></i></div><span class="st-meta">' + pct + "% completion</span></div>" +
         '<div class="st-card-actions">' +

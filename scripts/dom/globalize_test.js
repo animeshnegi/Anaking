@@ -124,7 +124,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const gb = JSON.parse(await get("/api/studio/strings?study=" + slug + "--en-gb&lang=en-GB"));
   check("AI-translate fills the English (UK) child without any network",
     gb.coverage.translated === gb.coverage.total, JSON.stringify(gb.coverage).slice(0, 140));
-  $('[data-act="child-open-parent"]').click(); await sleep(1000);
+  // --- dashboard: children nest inside the parent, never as separate projects
+  $('[data-act="back"]').click(); await sleep(900);
+  const cards = $$(".st-card");
+  check("child surveys are not separate projects on the dashboard",
+    !!cards.length && !cards.some(c => /--(es|en-gb)$/.test(c.getAttribute("data-slug") || "")),
+    cards.map(c => c.getAttribute("data-slug")).join(","));
+  const kidRows = $$('.st-card[data-slug="' + slug + '"] .st-kid');
+  check("parent card nests both translation children",
+    kidRows.length === 2 && /Español/.test(kidRows.map(r => r.textContent).join("")),
+    kidRows.map(r => r.textContent.trim()).join(" | "));
+  $('[data-act="open"][data-slug="' + slug + '"]').click(); await sleep(1000);
+  check("opening the parent from its card returns to the builder", !!$('[data-act="qadd"]'));
 
   // --- library: grouped add-item picker with every reference entry
   $('[data-act="qadd"]').click(); await sleep(30);

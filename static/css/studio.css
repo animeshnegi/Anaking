@@ -409,3 +409,11 @@ table.st-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .st-child-note{font-size:12px;color:var(--muted);background:var(--soft);border:1px solid var(--line);
   border-radius:999px;padding:6px 12px}
 .st-child-badge{color:var(--accent);font-weight:700}
+
+/* translation children nested inside the parent card */
+.st-card-kids{margin:10px 0 2px;border-top:1px dashed var(--line);padding-top:8px}
+.st-kids-head{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.st-kid{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0}
+.st-kid-lang b{font-size:13px}
+.st-kid-lang small{display:block;color:var(--muted);font-size:11px}
+.st-kid-tools{display:flex;gap:6px}
