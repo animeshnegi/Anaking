@@ -338,6 +338,11 @@
     if (tab === "questions") { p.innerHTML = workspace(); renderOutline(); renderEditorPane(); return; }
     p.innerHTML = '<div class="st-page"><div class="st-panel">' +
       (tab === "tpp" ? tppTab() : tab === "conjoint" ? conjointTab() : tab === "settings" ? settingsTab() : "<p>Loading\u2026</p>") + "</div></div>";
+    if (tab !== "questions") {
+      var ph = p.querySelector(".st-page-head");
+      if (ph) ph.insertAdjacentHTML("afterbegin",
+        '<button class="st-backtab" data-act="tab-back" type="button" title="Back to the Questions workspace">\u2190 Questions</button>');
+    }
     if (tab === "tpp") renderScenePrev();
     if (tab === "responses") responsesTab($(".st-panel", p));
     if (tab === "analysis") analysisTab($(".st-panel", p));
@@ -426,7 +431,7 @@
   function closeModal() { var m = document.getElementById("st-modal"); if (m) { m.hidden = true; m.innerHTML = ""; } }
   function openTypePicker(secId, afterQi) {
     var html = '<div class="st-modal-head"><strong>Add a question</strong><span class="st-meta">Pick the kind of answer you need - you can change it later.</span>' +
-      '<button class="ex-close" data-act="modal-close" type="button">&times;</button></div>';
+      '<button class="st-btn sm ghost" data-act="modal-close" type="button">\u2190 Back</button><button class="ex-close" data-act="modal-close" type="button">&times;</button></div>';
     GROUPS.forEach(function (g) {
       html += '<div class="st-type-group">' + g + '</div><div class="st-type-grid">';
       TYPES.filter(function (t) { return TYPE_INFO[t].group === g; }).forEach(function (t) {
@@ -529,7 +534,7 @@
     var defLang = d.default_language || "en-US";
     var html = '<div class="st-modal-head"><strong>Globalize Survey</strong>' +
       '<span class="st-meta">Only respondent-visible text is translated - notes and directions for the team stay in ' + esc(defLang) + "</span>" +
-      '<button class="ex-close" data-act="modal-close" type="button">&times;</button></div>';
+      '<button class="st-btn sm ghost" data-act="modal-close" type="button">\u2190 Back</button><button class="ex-close" data-act="modal-close" type="button">&times;</button></div>';
     var langs = Object.keys(c.translations || {});
     html += '<div class="st-lang-list">';
     if (!langs.length) html += '<div class="st-note">No translations yet. Add a language below, then translate it by hand or with AI.</div>';
@@ -592,7 +597,7 @@
     var base = location.origin + "/survey/" + cur.slug;
     openModal('<div class="st-modal-head"><strong>Share survey preview</strong><span class="st-meta">' +
       (cur.status === "live" ? "The study is live - the respondent link answers for real" : "Draft study - the respondent link is blocked until you go live") +
-      '</span><button class="ex-close" data-act="modal-close" type="button">&times;</button></div>' +
+      '</span><button class="st-btn sm ghost" data-act="modal-close" type="button">\u2190 Back</button><button class="ex-close" data-act="modal-close" type="button">&times;</button></div>' +
       '<div class="st-field"><label>Preview / test link <span class="st-opt">answers are marked as test data</span></label>' +
       '<div class="st-linkbox"><code>' + esc(base + "/test") + '</code><button class="st-btn sm" data-act="copylink" data-slug="' + esc(cur.slug) + '">Copy</button></div></div>' +
       '<div class="st-field"><label>Respondent link</label><div class="st-linkbox"><code>' + esc(base) + "</code></div></div>" +
@@ -601,7 +606,7 @@
   }
   function openTitleLang() {
     openModal('<div class="st-modal-head"><strong>Edit title and language</strong><span class="st-meta">The authoring language - translations are made from it</span>' +
-      '<button class="ex-close" data-act="modal-close" type="button">&times;</button></div>' +
+      '<button class="st-btn sm ghost" data-act="modal-close" type="button">\u2190 Back</button><button class="ex-close" data-act="modal-close" type="button">&times;</button></div>' +
       '<div class="st-field"><label>Survey title</label><input id="tl-title" value="' + esc(cur.title) + '"></div>' +
       '<div class="st-field"><label>Survey language (default)</label><select id="tl-lang">' + langOptions(cur.cfg.language || "en-US") + "</select></div>" +
       '<div class="st-note">Notes, directions and everything aimed at the research team always stay in this language. Only respondent-visible text is offered for translation.</div>' +
@@ -1730,7 +1735,7 @@
             '<table class="st-tbl"><tr><th>Item</th><th style="width:200px">Mean</th><th></th></tr>' +
             r.rows.map(function (row) {
               var m = row.mean == null ? 0 : row.mean;
-              return "<tr><td>" + esc(row.label) + "</td><td>" + (row.mean == null ? "\u2013" : m) + '</td><td><div class="st-bar"><i style="width:' + Math.min(100, m * 14) + '%"></i></div></td></tr>';
+              return "<tr><td>" + esc(row.label) + "</td><td>" + (row.mean == null ? "\u2013" : m) + '</td><td><div class="st-meter"><i style="width:' + Math.min(100, m * 14) + '%"></i></div></td></tr>';
             }).join("") + "</table>";
         });
         if (a.nps) html += '<div class="st-note">NPS segments: Promoter ' + a.nps.segments.Promoter + ", Passive " + a.nps.segments.Passive + ", Detractor " + a.nps.segments.Detractor + "</div>";
@@ -1801,6 +1806,7 @@
     if (act === "back") { flushSave(function () { history.replaceState(null, "", location.pathname + location.search); loadList(); }); }
     if (act === "status") setStatus(slug, b.getAttribute("data-status"), loadList);
     if (act === "setstatus") { if (b.classList.contains("on")) return; setStatus(cur.slug, b.getAttribute("data-status")); }
+    if (act === "tab-back") { if (tab === "settings" || tab === "conjoint") readSettings(); tab = "questions"; renderEditor(); return; }
     if (act === "sopts") { var mn = document.getElementById("st-sopts"); if (mn) mn.hidden = !mn.hidden; return; }
     if (act === "so-settings") { closeSopts(); tab = "settings"; renderEditor(); }
     if (act === "so-share") { closeSopts(); shareModal(); }

@@ -49,6 +49,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const $ = s => w.document.querySelector(s), $$ = s => [...w.document.querySelectorAll(s)];
   const fire = (el, type) => el.dispatchEvent(new w.Event(type, { bubbles: true }));
 
+  // --- the top builder bar must stay visible (a meter style once collapsed it)
+  const css = await get("/static/css/studio.css?v=260921c");
+  check("top builder bar not collapsed by the save-meter style", !/\.st-bar\{[^}]*height:8px/.test(css));
+  check("save meter has its own .st-meter class", /\.st-meter\{height:8px/.test(css) && !/<div class="st-bar"><i/.test(await get("/static/js/studio.js?v=260921c")));
+
   // --- SURVEY OPTIONS menu with the full item list
   const sopts = $('[data-act="sopts"]');
   check("SURVEY OPTIONS button in builder bar", !!sopts && /SURVEY OPTIONS/.test(sopts.textContent));
@@ -126,6 +131,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   check("question loop renders one box per item", r.has(".loopq") && host.querySelectorAll(".loop-row textarea").length === 2 && /First/.test(r.text));
   r = R({ id: "T1", type: "text_block", stem: "Notice", section: "S1", required: false, body: "Read this carefully" }, "");
   check("text block renders its copy", r.has(".textblock") && /Read this carefully/.test(r.text));
+
+  // --- every sub page carries a back button to Questions
+  $$("[data-tab]").find(b => b.getAttribute("data-tab") === "settings").click(); await sleep(40);
+  check("settings page has a back-to-Questions button", !!$('[data-act="tab-back"]'));
+  $('[data-act="tab-back"]').click(); await sleep(40);
+  check("back button returns to the Questions workspace", !!$("#st-outline") && !!$("#st-editor"));
+  $('[data-act="qadd"]').click(); await sleep(30);
+  check("library modal has a Back button that closes it", !!$('#st-modal [data-act="modal-close"]') &&
+    [...$$("#st-modal button")].some(b => /← Back/.test(b.textContent)));
+  [...$$("#st-modal button")].find(b => /← Back/.test(b.textContent)).click(); await sleep(20);
+  check("Back closes the library modal", $("#st-modal").hidden);
 
   // --- settings tab: survey pages & flow
   $$("[data-tab]").find(b => b.getAttribute("data-tab") === "settings").click(); await sleep(40);

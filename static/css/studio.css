@@ -321,8 +321,8 @@ a{color:var(--accent2)}
 table.st-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .st-tbl th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:6px 8px;border-bottom:2px solid var(--line)}
 .st-tbl td{padding:6px 8px;border-bottom:1px solid var(--line2)}
-.st-bar{height:8px;border-radius:5px;background:var(--line2);overflow:hidden}
-.st-bar i{display:block;height:100%;background:linear-gradient(90deg,#7fd4f0,#12789e)}
+.st-meter{height:8px;border-radius:5px;background:var(--line2);overflow:hidden}
+.st-meter i{display:block;height:100%;background:linear-gradient(90deg,#7fd4f0,#12789e)}
 
 /* ---------- walkthrough (TPP) tab ---------- */
 .st-muted-note{font-size:12px;color:var(--muted)}
@@ -397,3 +397,10 @@ table.st-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .st-tr-src{white-space:pre-wrap}
 .st-tr-row textarea{border:0;border-left:1px solid var(--line2);font:inherit;resize:vertical;background:#fffdf7}
 .st-tr-row textarea:focus{outline:2px solid #cfe3ec}
+
+/* back buttons: sub pages return to Questions */
+.st-backtab{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;
+  border-radius:999px;padding:5px 13px;font:inherit;font-size:12.5px;font-weight:700;color:var(--muted);
+  cursor:pointer;margin-bottom:10px}
+.st-backtab:hover{color:var(--ink);border-color:var(--faint)}
+.st-page-head{display:flex;flex-direction:column;align-items:flex-start}
