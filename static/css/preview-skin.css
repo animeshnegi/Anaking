@@ -418,3 +418,21 @@
   border:1px solid var(--line);border-radius:8px;resize:vertical}
 .survey-skin .proof-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
 .survey-skin .done-icon.note{background:var(--accent-soft);color:var(--accent)}
+.survey-skin .lang-pick{display:flex;align-items:center;gap:10px;margin:14px 0 4px;justify-content:center}
+.survey-skin .lang-pick-ic{color:var(--accent);font-size:18px}
+.survey-skin .lang-pick select{padding:8px 12px;border-radius:10px;border:1px solid var(--line);font:inherit;background:#fff}
+.survey-skin .nummatrix{display:flex;flex-direction:column;gap:10px}
+.survey-skin .nm-row{display:flex;align-items:center;gap:12px}
+.survey-skin .nm-label{flex:1}
+.survey-skin .nm-row input{width:130px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.survey-skin .delta{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}
+.survey-skin .delta-cell{display:flex;flex-direction:column;gap:5px}
+.survey-skin .delta-cell label{font-size:12.5px;color:var(--muted);font-weight:600}
+.survey-skin .delta-cell input{width:130px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit}
+.survey-skin .delta-out{font-size:22px;font-weight:800;color:var(--accent);padding:4px 2px}
+.survey-skin .concept-html{background:#f7fafc;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.survey-skin .textblock p{margin:0 0 10px}
+.survey-skin .loopq{display:flex;flex-direction:column;gap:12px}
+.survey-skin .loop-row{display:flex;flex-direction:column;gap:5px}
+.survey-skin .loop-label{font-weight:600}
+.survey-skin .loop-row input,.survey-skin .loop-row textarea{padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;width:100%;box-sizing:border-box}

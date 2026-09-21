@@ -4,6 +4,7 @@ Config-driven flattening, export sheets and quick analysis aggregates.
 
 from __future__ import annotations
 
+import json
 import time
 
 from .ai_detect import VERDICT_LIKELY, duplicate_verbatims
@@ -18,6 +19,11 @@ def _verbatim_qs(cfg: dict) -> list:
 def flatten(respondent, answers: dict, cfg: dict) -> dict:
     quota = cfg.get("quota", {})
     ai = score_free_text(answers, cfg, _verbatim_qs(cfg))
+    embedded = {}
+    try:
+        embedded = json.loads(respondent["embedded"] or "{}")
+    except (TypeError, ValueError, KeyError):
+        embedded = {}
     out = {
         "respondent_code": respondent["respondent_code"],
         "is_test": "test" if respondent["is_test"] else "real",
@@ -33,6 +39,10 @@ def flatten(respondent, answers: dict, cfg: dict) -> dict:
         # AI-answer roll-up: how many written answers scored over the study's flag threshold
         "ai_generated_answers": sum(1 for r in ai.values() if r["verdict"] == VERDICT_LIKELY),
         "ai_max_score": max([r["score"] for r in ai.values()], default=0),
+        # respondent language + embedded link variables are appended last so the
+        # long-standing column order (respondent_code first) never shifts
+        "language": (respondent["language"] or "") if "language" in respondent.keys() else "",
+        **{f"ev_{k}": v for k, v in (embedded or {}).items()},
     }
     # quota lookups when the study defines them
     setting_code = answers.get(quota.get("setting_q", ""), {}).get("_") if quota else None
@@ -89,6 +99,26 @@ def flatten(respondent, answers: dict, cfg: dict) -> dict:
                 b, w = a.get(f"R{i}_best", ""), a.get(f"R{i}_worst", "")
                 out[f"{qid}_R{i}_best"] = b
                 out[f"{qid}_R{i}_worst"] = w
+        elif t in ("date",):
+            out[qid] = a.get("_", "")
+        elif t == "numeric_matrix":
+            for r in q["rows"]:
+                out[f"{qid}_{r['code']}"] = a.get(r["code"], "")
+        elif t == "delta":
+            out[qid + "_before"] = a.get("before", "")
+            out[qid + "_after"] = a.get("after", "")
+            try:
+                out[qid + "_delta"] = float(a["after"]) - float(a["before"])
+            except (KeyError, TypeError, ValueError):
+                out[qid + "_delta"] = ""
+        elif t == "concept_test":
+            for r in q["rows"]:
+                out[f"{qid}_{r['code']}"] = a.get(r["code"], "")
+        elif t == "loop":
+            for it in q.get("items", []) or []:
+                out[f"{qid}_{it['code']}"] = a.get(it["code"], "")
+        elif t == "text_block":
+            pass
         elif t == "choice_task":
             n_tasks = (cfg.get("conjoint") or {}).get("n_tasks", 0)
             for i in range(1, n_tasks + 1):
@@ -297,6 +327,28 @@ def build_sheets(records: list, scope: str, cfg: dict):
         elif q["type"] == "nps":
             dd_rows.append([q["id"], q["section"], q["type"], stem, "_", "0-10 NPS",
                             "9-10 promoter, 7-8 passive, 0-6 detractor"])
+        elif q["type"] == "date":
+            dd_rows.append([q["id"], q["section"], q["type"], stem, "_", "calendar date",
+                            "YYYY-MM-DD"])
+        elif q["type"] == "numeric_matrix":
+            for r in q["rows"]:
+                dd_rows.append([q["id"], q["section"], q["type"], stem, r["code"], r["label"],
+                                f"{q.get('min', 0)}-{q.get('max', 100)} per row"])
+        elif q["type"] == "delta":
+            dd_rows.append([q["id"], q["section"], q["type"], stem,
+                            "before/after/delta", "two values and their difference",
+                            f"{q.get('min', -100)}-{q.get('max', 100)}"])
+        elif q["type"] == "concept_test":
+            for r in q["rows"]:
+                dd_rows.append([q["id"], q["section"], q["type"], stem, r["code"], r["label"],
+                                f"{q['scale']['min']}-{q['scale']['max']}" if "scale" in q else ""] )
+        elif q["type"] == "loop":
+            for it in q.get("items", []) or []:
+                dd_rows.append([q["id"], q["section"], q["type"], stem, it["code"], it["label"],
+                                "repeated " + (q.get("child") or "open_text")])
+        elif q["type"] == "text_block":
+            dd_rows.append([q["id"], q["section"], q["type"], stem, "-", "display-only text",
+                            "no answer stored"])
         else:
             dd_rows.append([q["id"], q["section"], q["type"], stem, "_", "single value",
                             f"{q.get('min', '')}-{q.get('max', '')}" if q["type"] in

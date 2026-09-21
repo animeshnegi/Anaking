@@ -18,6 +18,20 @@
       body: body ? JSON.stringify(body) : undefined
     }).then(function (r) { return r.json(); });
   }
+  var LANGCAT = [];
+  var langPanel = { lang: null, onlyMissing: false, q: "", data: null };
+  api("/api/studio/languages").then(function (d) { LANGCAT = d.languages || []; }).catch(function () {});
+  function langMeta(code) {
+    for (var i = 0; i < LANGCAT.length; i++) if (LANGCAT[i].code === code) return LANGCAT[i];
+    return { code: code, name: code, native: code };
+  }
+  function langOptions(sel) {
+    var cat = LANGCAT.length ? LANGCAT : [{ code: sel, name: sel, native: sel }];
+    return cat.map(function (l) {
+      return '<option value="' + l.code + '"' + (l.code === sel ? " selected" : "") + ">" + esc(l.name) + " (" + esc(l.native) + ")</option>";
+    }).join("");
+  }
+
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -48,23 +62,29 @@
 
   // ------------------------------------------------------------ question types
   var TYPE_INFO = {
-    single_select: { name: "Choose one", icon: "\u25C9", desc: "One answer from a list", group: "Choice" },
-    multi_select: { name: "Choose many", icon: "\u2611", desc: "Tick all that apply", group: "Choice" },
-    rank: { name: "Rank items", icon: "\u21C5", desc: "Put items in order of preference", group: "Choice" },
-    rating_grid: { name: "Rating grid", icon: "\u25A6", desc: "Rate several items on one scale", group: "Scales" },
-    semantic_diff: { name: "Word pairs", icon: "\u27F7", desc: "Slide between two opposite words", group: "Scales" },
-    nps: { name: "NPS 0\u201310", icon: "\u2469", desc: "Likelihood to recommend", group: "Scales", noprev: true },
-    emoji_grid: { name: "Emoji reaction", icon: "\u263A", desc: "Faces instead of numbers", group: "Scales", noprev: true },
-    numeric: { name: "Number", icon: "#", desc: "Type a number - %, $, count", group: "Numbers" },
-    slider: { name: "Slider", icon: "\u2696", desc: "Drag to a value", group: "Numbers" },
-    sum_to_100: { name: "Allocate 100", icon: "\u03A3", desc: "Split 100 points across items", group: "Numbers" },
-    open_text: { name: "Open text", icon: "\u00B6", desc: "Free text, with optional voice note", group: "Text" },
-    heatmap: { name: "Heat map", icon: "\u25A9", desc: "Intensity per row \u00D7 column", group: "Advanced", noprev: true },
-    maxdiff: { name: "MaxDiff", icon: "\u2194", desc: "Best / worst trade-offs", group: "Advanced", noprev: true },
-    choice_task: { name: "Conjoint choice task", icon: "\u21C4", desc: "Alternatives from the conjoint design", group: "Advanced" }
+    single_select: { name: "Multiple Choice", icon: "\u25C9", desc: "One answer from a list", group: "Questions" },
+    multi_select: { name: "Multiple Choice (many)", icon: "\u2611", desc: "Tick all that apply", group: "Questions" },
+    rank: { name: "Rank Order", icon: "\u21C5", desc: "Put items in order of preference", group: "Questions" },
+    rating_grid: { name: "Grid / Rating Scale", icon: "\u25A6", desc: "Rate several items on one scale", group: "Questions" },
+    semantic_diff: { name: "Word pairs", icon: "\u27F7", desc: "Slide between two opposite words", group: "Questions" },
+    nps: { name: "Net Promoter", icon: "\u2469", desc: "Likelihood to recommend", group: "Questions", noprev: true },
+    emoji_grid: { name: "Emoji reaction", icon: "\u263A", desc: "Faces instead of numbers", group: "Questions", noprev: true },
+    numeric: { name: "Numeric Entry", icon: "#", desc: "Type a number - %, $, count", group: "Questions" },
+    slider: { name: "Scale", icon: "\u2696", desc: "Drag to a value", group: "Questions" },
+    sum_to_100: { name: "Constant Sum", icon: "\u03A3", desc: "Split 100 points across items", group: "Questions" },
+    open_text: { name: "Text Entry", icon: "\u00B6", desc: "Free text, with optional voice note", group: "Questions" },
+    date: { name: "Date", icon: "\uD83D\uDCC5", desc: "Pick a calendar date", group: "Questions" },
+    numeric_matrix: { name: "Numeric Matrix", icon: "\u25A4", desc: "A number for every row", group: "Questions" },
+    delta: { name: "Delta", icon: "\u0394", desc: "Before / after values and the change", group: "Questions" },
+    concept_test: { name: "Concept Test", icon: "\uD83D\uDCA1", desc: "Show a concept, rate it on rows", group: "Methodologies" },
+    heatmap: { name: "Heatmap", icon: "\u25A9", desc: "Intensity per row \u00D7 column", group: "Methodologies", noprev: true },
+    maxdiff: { name: "Max Diff", icon: "\u2194", desc: "Best / worst trade-offs - the Max Diff experiment", group: "Methodologies", noprev: true },
+    choice_task: { name: "Conjoint", icon: "\u21C4", desc: "Choice tasks from the conjoint design", group: "Methodologies" },
+    loop: { name: "Question Loop", icon: "\u27F3", desc: "Ask the same thing for a list of items", group: "Survey flow" },
+    text_block: { name: "Text Block", icon: "\u2261", desc: "Rich text as its own step - no answer stored", group: "Objects" }
   };
   var TYPES = Object.keys(TYPE_INFO);
-  var GROUPS = ["Choice", "Scales", "Numbers", "Text", "Advanced"];
+  var GROUPS = ["Questions", "Methodologies", "Survey flow", "Objects"];
   function tinfo(t) { return TYPE_INFO[t] || { name: t, icon: "?", desc: "" }; }
 
   function qTemplate(type, id, secId) {
@@ -107,6 +127,22 @@
     }
     if (type === "maxdiff") { q.rounds = [{ items: ["a", "b", "c", "d"] }]; }
     if (type === "choice_task") { q.vignette = "Describe the patient here."; }
+    if (type === "date") { q.help = ""; }
+    if (type === "numeric_matrix") {
+      q.min = 0; q.max = 100;
+      q.rows = [{ code: "a", label: "First row" }, { code: "b", label: "Second row" }];
+    }
+    if (type === "delta") { q.min = 0; q.max = 100; q.before_label = "Before"; q.after_label = "After"; }
+    if (type === "concept_test") {
+      q.concept = "Describe the concept here.";
+      q.scale = { min: 1, max: 7, min_label: "Strongly disagree", max_label: "Strongly agree" };
+      q.rows = [{ code: "a", label: "It is easy to understand" }, { code: "b", label: "It is relevant to me" }];
+    }
+    if (type === "loop") {
+      q.child = "open_text"; q.prompt_template = "{label}"; q.text_rows = 2;
+      q.items = [{ code: "i1", label: "First item" }, { code: "i2", label: "Second item" }];
+    }
+    if (type === "text_block") { q.required = false; q.body = "Add instructions, an introduction or a story here."; }
     return q;
   }
 
@@ -246,7 +282,7 @@
   }
 
   // ------------------------------------------------------------ builder shell
-  function openEditor(slug) {
+  function openEditor(slug, done) {
     api("/api/studio/study?slug=" + encodeURIComponent(slug))
       .then(function (s) {
         if (s.error) { toast("Study not found: /" + slug); loadList(); return; }
@@ -254,6 +290,7 @@
         auto.dirty = false; auto.error = null; auto.lastSaved = null;
         renderEditor();
         if (location.hash !== "#" + slug) history.replaceState(null, "", location.pathname + location.search + "#" + slug);
+        if (done) setTimeout(done, 60);
       });
   }
 
@@ -269,6 +306,19 @@
       '<label class="st-switch" title="Save automatically a moment after every change"><input type="checkbox" id="st-autosave"' + (auto.on ? " checked" : "") + '><i></i>Autosave</label>' +
       '<button class="st-btn" data-act="save" title="Ctrl/Cmd + S">Save now</button>' +
       '<button class="st-btn play" data-act="viewlive">\u25B6 Preview survey</button>' +
+      '<div class="st-menu-wrap"><button class="st-btn" data-act="sopts" title="Survey options">SURVEY OPTIONS \u25BE</button>' +
+        '<div class="st-menu" id="st-sopts" hidden>' +
+        '<button type="button" data-act="so-settings">Settings</button>' +
+        '<button type="button" data-act="so-share">Share survey preview</button>' +
+        '<button type="button" data-act="so-move">Move survey\u2026</button>' +
+        '<button type="button" data-act="so-dup">Duplicate</button>' +
+        '<button type="button" data-act="so-word">Download Word Outline</button>' +
+        '<button type="button" data-act="so-track">Start Tracking</button>' +
+        '<button type="button" data-act="so-duptr">Duplicate &amp; Translate\u2026</button>' +
+        '<button type="button" data-act="so-global">Globalize Survey\u2026</button>' +
+        '<button type="button" data-act="so-title">Edit title and language\u2026</button>' +
+        '<button type="button" class="danger" data-act="so-del">Delete survey</button>' +
+        "</div></div>" +
       "</div>" +
       '<nav class="st-tabs">' +
       [["questions", "Questions", c.questions.length], ["tpp", "Walkthrough", (c.explainer_scenes || []).length || ""],
@@ -386,7 +436,26 @@
       });
       html += "</div>";
     });
+    html += '<div class="st-type-group">Survey flow \u00B7 pages &amp; objects</div><div class="st-type-grid">' +
+      [["cmd-welcome", "\u2615", "Welcome Page", "The introduction respondents see before question 1"],
+       ["cmd-thanks", "\u2714", "Thank You Page", "Shown when they finish the survey"],
+       ["cmd-page", "\u25A1", "Question Page", "Start a new page of questions"],
+       ["cmd-randomizer", "\u21C4", "Page Randomizer", "Respondents see the middle pages in a random order"],
+       ["cmd-embedded", "\u207D\u207E", "Embedded Variable", "Capture values passed in the survey link, e.g. ?panel=A"]]
+      .map(function (c2) {
+        return '<button class="st-type" data-act="' + c2[0] + '" data-sec="' + esc(secId) + '" data-after="' + afterQi + '">' +
+          '<span class="st-type-ic">' + c2[1] + '</span><span><b>' + c2[2] + "</b><small>" + c2[3] + "</small></span></button>";
+      }).join("") + "</div>";
     openModal(html, "st-typepick");
+  }
+  function addPage(afterSec) {
+    var n = cur.cfg.sections.length + 1, id = "S" + n;
+    while (cur.cfg.sections.some(function (s2) { return s2.id === id; })) { n++; id = "S" + n; }
+    var at = cur.cfg.sections.length;
+    if (afterSec) { for (var i2 = 0; i2 < cur.cfg.sections.length; i2++) if (cur.cfg.sections[i2].id === afterSec) at = i2 + 1; }
+    cur.cfg.sections.splice(at, 0, { id: id, title: "New page", blurb: null });
+    markChanged(); renderOutline(); refreshSectionSelect();
+    toast("Added a question page - rename it in the outline");
   }
   function addQuestion(type, secId, afterQi) {
     var q = qTemplate(type, nextQid(), secId);
@@ -405,6 +474,143 @@
   }
   var askCb = null;
 
+  // ------------------------------------------------------------ Globalize Survey panel
+  function openLangPanel(lang) {
+    langPanel.lang = lang || null;
+    langPanel.q = "";
+    langPanel.onlyMissing = false;
+    refreshLangPanel();
+  }
+  function refreshLangPanel() {
+    var base = "/api/studio/strings?study=" + encodeURIComponent(cur.slug);
+    api(base).then(function (d) {
+      if (!langPanel.lang && d.languages && d.languages.length) langPanel.lang = d.languages[0];
+      if (langPanel.lang) return api(base + "&lang=" + encodeURIComponent(langPanel.lang)).then(function (d2) { langPanel.data = d2; renderLangPanel(); });
+      langPanel.data = d; renderLangPanel();
+    });
+  }
+  function syncTranslationsFromServer(then) {
+    api("/api/studio/study?slug=" + encodeURIComponent(cur.slug)).then(function (s2) {
+      cur.cfg = s2.cfg; cur.title = s2.title;
+      if (tab === "questions") { renderOutline(); renderEditorPane(); }
+      if (then) then();
+    });
+  }
+  function contextLabel(x) {
+    if (x.kind === "study") return /welcome/.test(x.key) ? "Welcome page" : "Thank-you page";
+    if (x.kind === "section") return "Page title";
+    if (x.kind === "scene") return "Walkthrough scene";
+    var qid = x.qid || (x.key.split(":")[1] || "");
+    if (x.kind === "option") return qid + " \u00B7 option";
+    if (x.kind === "row") return qid + " \u00B7 row";
+    if (x.kind === "scale") return qid + " \u00B7 scale label";
+    if (/help$/.test(x.key)) return qid + " \u00B7 help text";
+    if (/placeholder$/.test(x.key)) return qid + " \u00B7 placeholder";
+    return qid + " \u00B7 question";
+  }
+  function trTableHtml() {
+    var d = langPanel.data;
+    if (!d || !langPanel.lang) return "";
+    var tbl = (cur.cfg.translations || {})[langPanel.lang] || {};
+    var rows = "";
+    (d.strings || []).forEach(function (x) {
+      var tv = tbl[x.key] || "";
+      if (langPanel.onlyMissing && tv.trim()) return;
+      if (langPanel.q && (x.text + " " + x.key + " " + tv).toLowerCase().indexOf(langPanel.q.toLowerCase()) < 0) return;
+      rows += '<div class="st-tr-row"><span class="st-tr-ctx" title="' + esc(x.key) + '">' + contextLabel(x) + "</span>" +
+        '<span class="st-tr-src">' + esc(x.text) + "</span>" +
+        '<textarea data-tr="' + esc(x.key) + '" rows="2" placeholder="Translation\u2026">' + esc(tv) + "</textarea></div>";
+    });
+    if (!rows) rows = '<div class="st-tr-row"><span></span><span class="st-meta">No strings match.</span><span></span></div>';
+    return '<div class="st-tr-row st-tr-head"><span>Context</span><span>' + esc(d.default_language) + " (team &amp; source)</span><span>" + esc(langPanel.lang) + "</span></div>" + rows;
+  }
+  function renderLangPanel() {
+    var d = langPanel.data, c = cur.cfg;
+    var defLang = d.default_language || "en-US";
+    var html = '<div class="st-modal-head"><strong>Globalize Survey</strong>' +
+      '<span class="st-meta">Only respondent-visible text is translated - notes and directions for the team stay in ' + esc(defLang) + "</span>" +
+      '<button class="ex-close" data-act="modal-close" type="button">&times;</button></div>';
+    var langs = Object.keys(c.translations || {});
+    html += '<div class="st-lang-list">';
+    if (!langs.length) html += '<div class="st-note">No translations yet. Add a language below, then translate it by hand or with AI.</div>';
+    langs.forEach(function (lc) {
+      var meta = langMeta(lc);
+      var tbl = c.translations[lc] || {};
+      var total = (d.strings || []).length;
+      var done = (d.strings || []).filter(function (x) { return (tbl[x.key] || "").trim(); }).length;
+      var pct = total ? Math.round(100 * done / total) : 100;
+      html += '<div class="st-lang-row' + (langPanel.lang === lc ? " on" : "") + '">' +
+        "<span><b>" + esc(meta.native) + "</b><small>" + esc(meta.name) + " \u00B7 " + esc(lc) + "</small></span>" +
+        '<span class="st-lang-bar"><i style="width:' + pct + '%"></i></span><span class="st-meta">' + pct + "%</span>" +
+        '<span class="st-lang-tools"><button class="st-btn sm' + (langPanel.lang === lc ? "" : " on") + '" data-act="lang-open" data-lang="' + esc(lc) + '">Translate</button>' +
+        '<button class="st-btn sm" data-act="lang-ai" data-lang="' + esc(lc) + '">AI-translate missing</button>' +
+        '<button class="st-btn sm danger" data-act="lang-del" data-lang="' + esc(lc) + '">Remove</button></span></div>';
+    });
+    html += '<div class="st-lang-add"><select id="lang-add-sel">' +
+      LANGCAT.filter(function (l) { return l.code !== defLang && !(c.translations || {})[l.code]; }).map(function (l) {
+        return '<option value="' + l.code + '">' + esc(l.name) + " (" + esc(l.native) + ")</option>"; }).join("") +
+      '</select><button class="st-btn on sm" data-act="lang-add">Add language</button></div></div>';
+    if (langPanel.lang) {
+      html += '<div class="st-lang-editor"><div class="st-lang-editor-head"><strong>' + esc(langMeta(langPanel.lang).native) + " translation</strong>" +
+        '<input id="lang-search" placeholder="Search text\u2026" value="' + esc(langPanel.q) + '">' +
+        '<label class="st-inline"><input type="checkbox" id="lang-missing"' + (langPanel.onlyMissing ? " checked" : "") + "> missing only</label>" +
+        '<span class="st-lang-grow"></span>' +
+        '<button class="st-btn sm" data-act="lang-ai">AI-translate missing</button>' +
+        '<button class="st-btn sm on" data-act="lang-save">Save translations</button></div>' +
+        '<div class="st-tr-table" id="lang-tr-host">' + trTableHtml() + "</div></div>";
+    }
+    openModal(html, "st-langmodal");
+  }
+
+  // ------------------------------------------------------------ Survey options menu
+  function closeSopts() { var mn = document.getElementById("st-sopts"); if (mn) mn.hidden = true; }
+  function dupCurrent(andTranslate) {
+    flushSave(function () {
+      var cfg = JSON.parse(JSON.stringify(cur.cfg));
+      cfg.title = cur.title + " (copy)";
+      api("/api/studio/save", { slug: "", title: cfg.title, cfg: cfg }).then(function (r) {
+        toast("Duplicated as /" + r.slug);
+        openEditor(r.slug, andTranslate ? function () { openLangPanel(null); } : null);
+      });
+    });
+  }
+  function moveStudy() {
+    askText("Move survey", "New address: /survey/<slug> - links to the old address stop working", cur.slug, function (v) {
+      var ns = (v || "").trim().toLowerCase();
+      if (!ns || ns === cur.slug) return;
+      flushSave(function () {
+        api("/api/studio/move", { slug: cur.slug, new_slug: ns }).then(function (r) {
+          if (r.error) { toast("Move failed: " + r.error); return; }
+          cur.slug = r.slug;
+          toast("Moved to /survey/" + r.slug);
+          renderEditor();
+        });
+      });
+    });
+  }
+  function shareModal() {
+    var base = location.origin + "/survey/" + cur.slug;
+    openModal('<div class="st-modal-head"><strong>Share survey preview</strong><span class="st-meta">' +
+      (cur.status === "live" ? "The study is live - the respondent link answers for real" : "Draft study - the respondent link is blocked until you go live") +
+      '</span><button class="ex-close" data-act="modal-close" type="button">&times;</button></div>' +
+      '<div class="st-field"><label>Preview / test link <span class="st-opt">answers are marked as test data</span></label>' +
+      '<div class="st-linkbox"><code>' + esc(base + "/test") + '</code><button class="st-btn sm" data-act="copylink" data-slug="' + esc(cur.slug) + '">Copy</button></div></div>' +
+      '<div class="st-field"><label>Respondent link</label><div class="st-linkbox"><code>' + esc(base) + "</code></div></div>" +
+      '<div class="st-note">Both links open exactly what respondents see, in whichever language they pick.</div>' +
+      '<div class="st-modal-actions"><button class="st-btn on" data-act="modal-close">Done</button></div>');
+  }
+  function openTitleLang() {
+    openModal('<div class="st-modal-head"><strong>Edit title and language</strong><span class="st-meta">The authoring language - translations are made from it</span>' +
+      '<button class="ex-close" data-act="modal-close" type="button">&times;</button></div>' +
+      '<div class="st-field"><label>Survey title</label><input id="tl-title" value="' + esc(cur.title) + '"></div>' +
+      '<div class="st-field"><label>Survey language (default)</label><select id="tl-lang">' + langOptions(cur.cfg.language || "en-US") + "</select></div>" +
+      '<div class="st-note">Notes, directions and everything aimed at the research team always stay in this language. Only respondent-visible text is offered for translation.</div>' +
+      '<div class="st-modal-actions"><button class="st-btn on" data-act="tl-save">Save</button><button class="st-btn" data-act="modal-close">Cancel</button></div>');
+  }
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest || !e.target.closest(".st-menu-wrap")) closeSopts();
+  });
+
   // ------------------------------------------------------------ question editor pane
   var ed = null;           // live reference to cur.cfg.questions[sel]
   var OPS = [["selected", "has selected"], ["not_selected", "has not selected"],
@@ -416,7 +622,7 @@
     ["Arial, Helvetica, sans-serif", "Arial"], ["Verdana, sans-serif", "Verdana"], ["'Trebuchet MS', sans-serif", "Trebuchet"],
     ["'Courier New', monospace", "Courier (mono)"]];
   var SIZES = [["", "Default"], ["15px", "Small"], ["19px", "Normal"], ["22px", "Large"], ["26px", "X-Large"], ["32px", "Huge"]];
-  var LIST_KEY = { opt: "options", row: "rows", col: "cols" };
+  var LIST_KEY = { opt: "options", row: "rows", col: "cols", item: "items" };
   var FLAG_INFO = {
     pin: { label: "\uD83D\uDCCC Pin", tip: "Keeps its place when the list is randomised" },
     exclusive: { label: "\u2298 Exclusive", tip: "Selecting it clears every other answer - for None / Not applicable" },
@@ -424,7 +630,7 @@
   };
 
   function hasOptions(t) { return t === "single_select" || t === "multi_select"; }
-  function hasRows(t) { return ["rating_grid", "semantic_diff", "sum_to_100", "rank", "emoji_grid", "heatmap"].indexOf(t) >= 0; }
+  function hasRows(t) { return ["rating_grid", "semantic_diff", "sum_to_100", "rank", "emoji_grid", "heatmap", "numeric_matrix", "concept_test"].indexOf(t) >= 0; }
 
   function card(id, title, hint, body, collapsed) {
     return '<details class="st-ecard" id="card-' + id + '"' + (collapsed ? "" : " open") + '><summary><span>' + title + "</span>" +
@@ -660,13 +866,47 @@
       html += itemTable("row", ed.rows || [], { noun: "row", flags: ["pin"], left: t === "semantic_diff", ph: t === "rank" ? "Item to rank" : "Row / statement", labelHead: t === "rank" ? "Item" : "Row" });
       if (t === "heatmap") html += '<h4 class="st-h4">Columns</h4>' + itemTable("col", ed.cols || [], { noun: "column", flags: [], ph: "Column label" });
     }
-    if (t === "rating_grid" || t === "semantic_diff" || t === "nps") {
+    if (t === "loop") {
+      html += '<div class="st-field"><label>What each loop asks <span class="st-opt">{label} is replaced with the item name</span></label><input id="f-ptmpl" value="' + esc(ed.prompt_template || "{label}") + '" placeholder="{label}"></div>' +
+        '<div class="st-grid3"><div class="st-field"><label>Answer type</label><select id="f-child">' +
+        [["open_text", "Text entry"], ["numeric", "Numeric entry"]].map(function (o) {
+          return '<option value="' + o[0] + '"' + ((ed.child || "open_text") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></div>" +
+        '<div class="st-field"><label>Text rows</label><input id="f-textrows" type="number" min="1" value="' + (ed.text_rows || 2) + '"></div>' +
+        '<div class="st-field"><label>Placeholder</label><input id="f-placeholder" value="' + esc(ed.placeholder || "") + '"></div></div>' +
+        '<h4 class="st-h4">Loop over</h4>' + itemTable("item", ed.items || [], { noun: "item", flags: [], ph: "Item label" });
+    }
+    if (t === "concept_test") {
+      html += '<div class="st-field"><label>Concept shown to respondents</label><textarea id="f-concept" rows="4">' + esc(ed.concept || "") + '</textarea>' +
+        '<div class="st-hint">Attach an image or video under <b>Image / video</b>, or use rich text in the question text above.</div></div>' +
+        '<h4 class="st-h4">Rating rows</h4>';
+    }
+    if (t === "rating_grid" || t === "semantic_diff" || t === "nps" || t === "concept_test") {
       var sc = ed.scale || {};
       html += '<h4 class="st-h4">Scale</h4><div class="st-grid4">' +
         '<div class="st-field"><label>From</label><input id="f-smin" type="number" value="' + (sc.min != null ? sc.min : 1) + '"></div>' +
         '<div class="st-field"><label>To</label><input id="f-smax" type="number" value="' + (sc.max != null ? sc.max : 7) + '"></div>' +
         '<div class="st-field"><label>Low-end label</label><input id="f-sminl" value="' + esc(sc.min_label || "") + '" placeholder="e.g. Not at all"></div>' +
         '<div class="st-field"><label>High-end label</label><input id="f-smaxl" value="' + esc(sc.max_label || "") + '" placeholder="e.g. Extremely"></div></div>';
+    }
+    if (t === "numeric_matrix" || t === "delta") {
+      html += '<div class="st-grid4"><div class="st-field"><label>Minimum <span class="st-opt">blank = no limit</span></label><input id="f-nmin" type="number" value="' + (ed.min != null ? ed.min : "") + '"></div>' +
+        '<div class="st-field"><label>Maximum</label><input id="f-nmax" type="number" value="' + (ed.max != null ? ed.max : "") + '"></div>' +
+        '<div class="st-field"><label>Step</label><input id="f-nstep" type="number" value="' + (ed.step != null ? ed.step : "") + '"></div>' +
+        (t === "delta" ? '<div class="st-field"><label>&nbsp;</label><div class="st-meta">The change (after \u2212 before) is stored as <code>' + esc(ed.id) + '_delta</code>.</div></div>' : "") +
+        "</div>";
+      if (t === "delta") {
+        html += '<div class="st-grid2"><div class="st-field"><label>\u201CBefore\u201D label</label><input id="f-beforel" value="' + esc(ed.before_label || "Before") + '"></div>' +
+          '<div class="st-field"><label>\u201CAfter\u201D label</label><input id="f-afterl" value="' + esc(ed.after_label || "After") + '"></div></div>';
+      }
+    }
+    if (t === "date") {
+      html += '<div class="st-grid2"><div class="st-field"><label>Earliest date <span class="st-opt">blank = any</span></label><input id="f-datemin" type="date" value="' + esc(ed.min || "") + '"></div>' +
+        '<div class="st-field"><label>Latest date</label><input id="f-datemax" type="date" value="' + esc(ed.max || "") + '"></div></div>';
+    }
+    if (t === "text_block") {
+      html += '<div class="st-field"><label>Block text</label>' + richToolbar("f-body-rich") +
+        '<div class="st-rich" id="f-body-rich" contenteditable="true" data-placeholder="What should this page say?">' + chipify(Q.sanitize(ed.body_html || esc(ed.body || ""))) + "</div>" +
+        '<div class="st-hint">Shown as its own step with a Continue button. Nothing is stored for it.</div></div>';
     }
     if (t === "numeric" || t === "slider") {
       html += '<div class="st-grid4"><div class="st-field"><label>Minimum</label><input id="f-min" type="number" value="' + (ed.min != null ? ed.min : 0) + '"></div>' +
@@ -837,7 +1077,7 @@
       setOrDel(ed.style, "font", val("f-font")); setOrDel(ed.style, "size", val("f-size")); setOrDel(ed.style, "align", val("f-align"));
       if (!Object.keys(ed.style).length) delete ed.style;
     }
-    if (t === "rating_grid" || t === "semantic_diff" || t === "nps") {
+    if (t === "rating_grid" || t === "semantic_diff" || t === "nps" || t === "concept_test") {
       if (val("f-smin") !== undefined) {
         ed.scale = ed.scale || {}; ed.scale.min = num("f-smin") != null ? num("f-smin") : 1; ed.scale.max = num("f-smax") != null ? num("f-smax") : 7;
         setOrDel(ed.scale, "min_label", val("f-sminl")); setOrDel(ed.scale, "max_label", val("f-smaxl"));
@@ -849,6 +1089,23 @@
       var qaa = val("f-aiaction");                    // "" = follow the study setting
       setOrDel(ed, "ai_action", qaa);
       if (qaa === "off") ed.ai_check = false; else delete ed.ai_check;
+    }
+    if (t === "concept_test" && val("f-concept") !== undefined) setOrDel(ed, "concept", val("f-concept"));
+    if (t === "numeric_matrix" || t === "delta") {
+      if (val("f-nmin") !== undefined) { setOrDel(ed, "min", num("f-nmin")); setOrDel(ed, "max", num("f-nmax")); setOrDel(ed, "step", num("f-nstep")); }
+    }
+    if (t === "delta" && val("f-beforel") !== undefined) { setOrDel(ed, "before_label", val("f-beforel")); setOrDel(ed, "after_label", val("f-afterl")); }
+    if (t === "date" && val("f-datemin") !== undefined) { setOrDel(ed, "min", val("f-datemin")); setOrDel(ed, "max", val("f-datemax")); }
+    if (t === "loop" && val("f-child") !== undefined) {
+      setOrDel(ed, "child", val("f-child") === "open_text" ? "" : val("f-child"));
+      setOrDel(ed, "prompt_template", val("f-ptmpl"));
+      setOrDel(ed, "text_rows", num("f-textrows"));
+      setOrDel(ed, "placeholder", val("f-placeholder"));
+    }
+    var bodyRich = document.getElementById("f-body-rich");
+    if (bodyRich) {
+      var bh = unchip(Q.sanitize(bodyRich.innerHTML));
+      if (Q.stripTags(bh)) { ed.body_html = bh; ed.body = Q.stripTags(bh); } else { delete ed.body_html; delete ed.body; }
     }
     if (t === "rank" && val("f-rankcount") !== undefined) setOrDel(ed, "rank_count", num("f-rankcount"));
     if (t === "maxdiff" && val("f-rounds") !== undefined) ed.rounds = String(val("f-rounds")).split("\n").filter(function (l) { return l.trim(); }).map(function (l) { return { items: l.split(",").map(function (x) { return x.trim(); }).filter(Boolean) }; });
@@ -886,9 +1143,11 @@
   }
   function convertType(newType) {
     var old = ed, fresh = qTemplate(newType, old.id, old.section);
-    ["stem", "stem_html", "help", "help_html", "required", "show_if", "media", "style", "hide_number", "randomize"].forEach(function (k) { if (old[k] !== undefined) fresh[k] = old[k]; });
+    ["stem", "stem_html", "help", "help_html", "required", "show_if", "media", "style", "hide_number", "randomize", "concept", "body", "body_html", "vignette"].forEach(function (k) { if (old[k] !== undefined) fresh[k] = old[k]; });
     if (hasOptions(newType) && old.options) fresh.options = old.options;
     if (hasRows(newType) && old.rows) fresh.rows = old.rows;
+    if (old.items && fresh.items) fresh.items = old.items;
+    if (old.cols && fresh.cols) fresh.cols = old.cols;
     if (old.scale && fresh.scale) fresh.scale = Object.assign(fresh.scale, old.scale);
     cur.cfg.questions[sel] = fresh; markChanged(); renderOutline(); renderEditorPane();
     toast("Changed to " + tinfo(newType).name);
@@ -1067,6 +1326,86 @@
     if (act === "modal-close") closeModal();
     if (act === "qadd-type") addQuestion(b.getAttribute("data-type"), b.getAttribute("data-sec"), Number(b.getAttribute("data-after")));
     if (act === "ask-ok") { var v = (document.getElementById("st-ask") || {}).value; closeModal(); if (askCb) askCb(v); askCb = null; }
+    if (act === "cmd-welcome" || act === "cmd-thanks") {
+      closeModal(); tab = "settings"; renderEditor();
+      toast(act === "cmd-welcome" ? "Write the welcome page under Survey pages & flow" : "Write the thank-you page under Survey pages & flow");
+      var wf = document.getElementById(act === "cmd-welcome" ? "f-welcomet" : "f-thankst");
+      if (wf) { wf.scrollIntoView({ block: "center" }); wf.focus(); }
+    }
+    if (act === "cmd-page") { closeModal(); addPage(b.getAttribute("data-sec")); }
+    if (act === "cmd-randomizer") {
+      cur.cfg.randomize_pages = !cur.cfg.randomize_pages; markChanged();
+      toast(cur.cfg.randomize_pages ? "Page Randomizer on - middle pages shuffle per respondent" : "Page Randomizer off");
+      openTypePicker(b.getAttribute("data-sec"), Number(b.getAttribute("data-after")));
+    }
+    if (act === "cmd-embedded") {
+      closeModal();
+      askText("Embedded variable", "Name to capture from the survey link - e.g. panel for /survey/" + cur.slug + "?panel=A", "", function (v2) {
+        var name = (v2 || "").trim().replace(/[^a-zA-Z0-9_.-]/g, "");
+        if (!name) return;
+        cur.cfg.embedded = cur.cfg.embedded || [];
+        if (cur.cfg.embedded.some(function (e2) { return e2.name === name; })) { toast("Already captured"); return; }
+        cur.cfg.embedded.push({ name: name }); markChanged();
+        toast("Embedded variable {" + name + "} captured from the link");
+      });
+    }
+    if (act === "lang-add") {
+      var la = val("lang-add-sel");
+      if (la) { cur.cfg.translations = cur.cfg.translations || {}; cur.cfg.translations[la] = {}; langPanel.lang = la; markChanged(); flushSave(refreshLangPanel); }
+    }
+    if (act === "lang-open") { langPanel.lang = b.getAttribute("data-lang"); refreshLangPanel(); }
+    if (act === "lang-del") {
+      var dl = b.getAttribute("data-lang");
+      if (confirm("Remove the " + dl + " translation? The default-language survey is not affected.")) {
+        delete cur.cfg.translations[dl];
+        if (langPanel.lang === dl) langPanel.lang = null;
+        markChanged(); flushSave(refreshLangPanel);
+      }
+    }
+    if (act === "lang-ai") {
+      var lg = b.getAttribute("data-lang") || langPanel.lang;
+      if (!lg) return;
+      b.disabled = true; b.textContent = "Translating\u2026";
+      flushSave(function () {
+        api("/api/studio/autotranslate", { slug: cur.slug, lang: lg }).then(function (r) {
+          if (r.error) { toast("AI translate failed: " + r.error); refreshLangPanel(); return; }
+          var nf = Object.keys(r.failed || {}).length;
+          toast("AI translated " + r.translated + " string(s)" + (nf ? " \u00B7 " + nf + " could not be translated - finish them by hand" : ""));
+          syncTranslationsFromServer(refreshLangPanel);
+        });
+      });
+    }
+    if (act === "lang-save") {
+      var out2 = {};
+      $$("#st-modal [data-tr]").forEach(function (n) { out2[n.getAttribute("data-tr")] = n.value; });
+      api("/api/studio/translate", { slug: cur.slug, lang: langPanel.lang, strings: out2 }).then(function (r) {
+        if (r.error) { toast("Save failed: " + r.error); return; }
+        toast("Saved - " + r.coverage.translated + " of " + r.coverage.total + " respondent strings translated");
+        syncTranslationsFromServer(refreshLangPanel);
+      });
+    }
+    if (act === "tl-save") {
+      var nt = (val("tl-title") || "").trim();
+      if (nt) cur.title = nt;
+      var nl = val("tl-lang") || "en-US";
+      if (nl === "en-US") delete cur.cfg.language; else cur.cfg.language = nl;
+      var ti = document.getElementById("ed-title"); if (ti && nt) ti.value = nt;
+      closeModal(); markChanged(); flushSave(function () { toast("Saved"); });
+    }
+  });
+
+  // search / missing-only inside the language panel (delegated so re-renders keep focus)
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.id === "lang-search") {
+      langPanel.q = e.target.value;
+      var host = document.getElementById("lang-tr-host");
+      if (host) host.innerHTML = trTableHtml();
+    }
+    if (e.target && e.target.id === "lang-missing") {
+      langPanel.onlyMissing = e.target.checked;
+      var host2 = document.getElementById("lang-tr-host");
+      if (host2) host2.innerHTML = trTableHtml();
+    }
   });
 
   // ------------------------------------------------------------ TPP + walkthrough tab
@@ -1276,6 +1615,20 @@
       '<div class="st-meta">Test link (not counted as real data): <code>/survey/' + esc(cur.slug) + "/test</code></div></div>" +
       f("f-minsec", "Minimum time to complete", "seconds - faster respondents are flagged as speeders", qc.min_seconds || 300, "", "number") +
       "</div>" +
+      '<h4 class="st-h4">Survey pages &amp; flow <span class="st-opt">welcome page, thank-you page, link variables, page order</span></h4>' +
+      '<div class="st-grid2">' +
+      f("f-welcomet", "Welcome page title", "first screen before question 1", c.welcome_title, "Welcome to the study") +
+      f("f-thankst", "Thank-you page title", "shown when they finish", c.thanks_title, "Thank you") +
+      "</div>" +
+      '<div class="st-grid2">' +
+      '<div class="st-field"><label>Welcome page text</label><textarea id="f-welcome" data-set="1" rows="3" placeholder="A sentence or two about what to expect">' + esc(c.welcome_text || "") + "</textarea></div>" +
+      '<div class="st-field"><label>Thank-you page text</label><textarea id="f-thanks" data-set="1" rows="3" placeholder="What happens next for them">' + esc(c.thanks_text || "") + "</textarea></div></div>" +
+      '<div class="st-grid2">' +
+      '<div class="st-field"><label>Authoring language <span class="st-opt">default - English US unless changed</span></label><select id="f-deflang" data-set="1">' + langOptions(c.language || "en-US") + "</select>" +
+      '<div class="st-meta">Translate respondent text into other languages with <b>Survey options \u2192 Globalize Survey\u2026</b> - by hand or with AI.</div></div>' +
+      '<div class="st-field"><label>Embedded variables <span class="st-opt">names captured from the survey link, comma separated</span></label><input id="f-embedded" data-set="1" value="' + esc((c.embedded || []).map(function (e2) { return e2.name; }).join(", ")) + '" placeholder="panel, rid">' +
+      '<div class="st-meta">A respondent opening <code>/survey/' + esc(cur.slug) + "?panel=A</code> is stored with <code>ev_panel = A</code> and it appears in every export.</div></div></div>" +
+      '<label class="st-switch"><input type="checkbox" id="f-randpages" data-set="1"' + (c.randomize_pages ? " checked" : "") + '><i></i>Page Randomizer - respondents see the middle pages in a random order</label>' +
       '<h4 class="st-h4">Quality flags</h4><div class="st-grid2">' +
       f("f-attq", "Attention-check question id", "", qc.attention_q, "e.g. Q13") +
       f("f-attok", "\u2026correct answer code", "", qc.attention_ok, "e.g. 2") +
@@ -1328,6 +1681,16 @@
       else delete c.qc.check_all_text;
       c.metrics = c.metrics || {};
       setOrDel(c.metrics, "intent_q", (val("f-m1") || "").trim()); setOrDel(c.metrics, "pct_q", (val("f-m2") || "").trim()); setOrDel(c.metrics, "wtp_q", (val("f-m3") || "").trim());
+    }
+    if (val("f-welcomet") !== undefined) {
+      setOrDel(c, "welcome_title", (val("f-welcomet") || "").trim());
+      setOrDel(c, "welcome_text", (val("f-welcome") || "").trim());
+      setOrDel(c, "thanks_title", (val("f-thankst") || "").trim());
+      setOrDel(c, "thanks_text", (val("f-thanks") || "").trim());
+      setOrDel(c, "language", val("f-deflang") === "en-US" ? "" : val("f-deflang"));
+      c.randomize_pages = chk("f-randpages") === true;
+      c.embedded = (val("f-embedded") || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean)
+        .map(function (nm) { return { name: nm }; });
     }
     if (val("f-dwell") !== undefined) c.conjoint_min_dwell = num("f-dwell") || 10;
     if (val("f-cvignette") !== undefined) c.vignette = val("f-cvignette");
@@ -1438,6 +1801,17 @@
     if (act === "back") { flushSave(function () { history.replaceState(null, "", location.pathname + location.search); loadList(); }); }
     if (act === "status") setStatus(slug, b.getAttribute("data-status"), loadList);
     if (act === "setstatus") { if (b.classList.contains("on")) return; setStatus(cur.slug, b.getAttribute("data-status")); }
+    if (act === "sopts") { var mn = document.getElementById("st-sopts"); if (mn) mn.hidden = !mn.hidden; return; }
+    if (act === "so-settings") { closeSopts(); tab = "settings"; renderEditor(); }
+    if (act === "so-share") { closeSopts(); shareModal(); }
+    if (act === "so-move") { closeSopts(); moveStudy(); }
+    if (act === "so-dup") { closeSopts(); dupCurrent(false); }
+    if (act === "so-word") { closeSopts(); flushSave(function () { location.href = "/api/studio/outline.docx?study=" + encodeURIComponent(cur.slug); }); }
+    if (act === "so-track") { closeSopts(); if (confirm("Go live? Anyone with the respondent link can start answering.")) setStatus(cur.slug, "live"); }
+    if (act === "so-duptr") { closeSopts(); dupCurrent(true); }
+    if (act === "so-global") { closeSopts(); flushSave(openLangPanel); }
+    if (act === "so-title") { closeSopts(); openTitleLang(); }
+    if (act === "so-del") { closeSopts(); if (confirm("Delete study /" + cur.slug + " and all of its responses? This cannot be undone.")) api("/api/studio/delete", { slug: cur.slug }).then(function () { cur = null; loadList(); }); }
     if (act === "dup") {
       api("/api/studio/study?slug=" + slug).then(function (s) {
         var cfg = JSON.parse(JSON.stringify(s.cfg)); cfg.title = s.title + " (copy)";

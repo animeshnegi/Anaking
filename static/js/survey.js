@@ -29,6 +29,7 @@
   var dwellStart = 0;
   var pendingDwell = null;
   var MIN_DWELL = 12;
+  var LANG = "";           // respondent language, from ?lang= or the on-welcome picker
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var el = function (tag, cls, html) {
@@ -37,6 +38,70 @@
     if (html != null) e.innerHTML = html;
     return e;
   };
+
+  function loadSpecLang(lang) {
+    LANG = lang;
+    try { store("lang", lang); } catch (e) {}
+    return fetch("/api/spec/" + STUDY.slug + "?lang=" + encodeURIComponent(lang))
+      .then(function (r) { return r.json(); })
+      .then(function (spec) {
+        SPEC = spec;
+        CONJOINT = spec.conjoint;
+        NARR = spec.narration;
+        SCENES = spec.explainer_scenes;
+        window.BEACON_CONJOINT_SCENE = spec.conjoint_scene;
+        setupLangPicker();
+        applyWelcomeCopy();
+      });
+  }
+
+  function setupLangPicker() {
+    var pick = $("#lang-pick");
+    if (pick) pick.remove();
+    if (!SPEC || !SPEC.languages || SPEC.languages.length < 2) return;
+    var host = document.querySelector("#start-btn");
+    var row = el("div", "lang-pick");
+    row.id = "lang-pick";
+    row.appendChild(el("span", "lang-pick-ic", "\u2726"));
+    var sel = el("select", "");
+    SPEC.languages.forEach(function (l) {
+      var o = document.createElement("option");
+      o.value = l.code;
+      o.textContent = l.native || l.code;
+      if (l.code === SPEC.render_language) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", function () { loadSpecLang(sel.value); });
+    row.appendChild(sel);
+    if (host && host.parentElement) host.parentElement.insertBefore(row, host);
+  }
+
+  function applyWelcomeCopy() {
+    if (!SPEC) return;
+    try { document.documentElement.dir = SPEC.render_dir || "ltr"; } catch (e) {}
+    if (SPEC.welcome_title) {
+      var h = document.querySelector("#welcome h1");
+      if (h) h.textContent = SPEC.welcome_title;
+    }
+    if (SPEC.welcome_text) {
+      var ps = document.querySelectorAll("#welcome p");
+      if (ps.length) ps[0].textContent = SPEC.welcome_text;
+    }
+  }
+
+  function readEmbedded() {
+    var out = {};
+    try {
+      var ps = new URLSearchParams(location.search);
+      (SPEC.embedded || []).forEach(function (n) {
+        var v = ps.get(n);
+        if (v !== null) out[n] = v;
+      });
+    } catch (e) {}
+    return out;
+  }
+
+  function isNum(x) { return x !== "" && x !== null && x !== undefined && !isNaN(Number(x)); }
 
   function store(k, v) {
     try {
@@ -654,9 +719,39 @@
   }
 
   // ============================================================ steps
+  function seededOrder(items) {
+    // Page Randomizer: keep the opening and closing sections fixed, shuffle the
+    // middle section groups deterministically for this respondent's session.
+    var groups = [];
+    items.forEach(function (q) {
+      var g = groups[groups.length - 1];
+      if (!g || g.sec !== q.section) groups.push({ sec: q.section, qs: [q] });
+      else g.qs.push(q);
+    });
+    if (groups.length < 3) return items;
+    var mid = groups.slice(1, groups.length - 1);
+    var seedStr = (SESSION && SESSION.session_id) || "preview";
+    var h = 2166136261;
+    for (var i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    var st = h || 1;
+    function rnd() {
+      st ^= st << 13; st ^= st >>> 17; st ^= st << 5; st >>>= 0;
+      return st / 4294967296;
+    }
+    for (var j = mid.length - 1; j > 0; j--) {
+      var k = Math.floor(rnd() * (j + 1));
+      var t = mid[j]; mid[j] = mid[k]; mid[k] = t;
+    }
+    var out = groups[0].qs.slice();
+    mid.forEach(function (g) { out = out.concat(g.qs); });
+    return out.concat(groups[groups.length - 1].qs);
+  }
+
   function buildSteps() {
     steps = [];
-    SPEC.questions.forEach(function (q) {
+    var list = SPEC.questions.slice();
+    if (SPEC.randomize_pages) list = seededOrder(list);
+    list.forEach(function (q) {
       if (q.type === "choice_task") {
         var order = (SESSION.task_order && SESSION.task_order.length)
           ? SESSION.task_order
@@ -699,6 +794,18 @@
         return q.rows.some(function (r) { return a[r.code] !== undefined && a[r.code] !== ""; });
       case "multi_select":
         return (a.codes || []).length > 0;
+      case "date":
+        return !!(a && a._);
+      case "numeric_matrix":
+        return (q.rows || []).length > 0 && (q.rows || []).every(function (r) { return a[r.code] !== undefined && a[r.code] !== ""; });
+      case "delta":
+        return !!(a && a.before !== undefined && a.before !== "" && a.after !== undefined && a.after !== "");
+      case "concept_test":
+        return (q.rows || []).every(function (r) { return a[r.code] !== undefined; });
+      case "loop":
+        return (q.items || []).length > 0 && (q.items || []).every(function (it) { return a[it.code] !== undefined && String(a[it.code]).trim() !== ""; });
+      case "text_block":
+        return true;
       case "rank":
         return (a.order || []).length === q.rows.length;
       case "choice_task":
@@ -878,6 +985,127 @@
       if (ev.key === "ArrowRight" || ev.key === "ArrowUp") { ev.preventDefault(); place(Math.min(max, v0 + 1), true); }
     });
     return box;
+  }
+
+  function renderDate(q) {
+    var a = answers[q.id] || {};
+    var wrap = el("div", "field");
+    var input = el("input", "");
+    input.type = "date";
+    if (q.min) input.min = q.min;
+    if (q.max) input.max = q.max;
+    input.value = a._ || "";
+    input.addEventListener("change", function () { setAns(q.id, "_", input.value); hideErr(); });
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  function renderNumMatrix(q) {
+    var wrap = el("div", "nummatrix");
+    (q.rows || []).forEach(function (r) {
+      var row = el("div", "nm-row");
+      var lbl = el("div", "nm-label"); lbl.textContent = r.label;
+      var inp = el("input", ""); inp.type = "number";
+      if (q.min !== undefined) inp.min = q.min;
+      if (q.max !== undefined) inp.max = q.max;
+      if (q.step !== undefined) inp.step = q.step;
+      var a = answers[q.id] || {};
+      if (a[r.code] !== undefined && a[r.code] !== "") inp.value = a[r.code];
+      inp.addEventListener("input", function () { setAns(q.id, r.code, inp.value); hideErr(); });
+      row.appendChild(lbl); row.appendChild(inp);
+      wrap.appendChild(row);
+    });
+    return wrap;
+  }
+
+  function renderDelta(q) {
+    var wrap = el("div", "delta");
+    var a = answers[q.id] || {};
+    var out = el("div", "delta-out");
+    function paint() {
+      var d = NaN;
+      if (before.value !== "" && after.value !== "") d = parseFloat(after.value) - parseFloat(before.value);
+      out.textContent = isFinite(d) ? (d >= 0 ? "+" : "") + d : "\u2014";
+    }
+    function sync() {
+      setAns(q.id, "before", before.value);
+      setAns(q.id, "after", after.value);
+      var d = NaN;
+      if (before.value !== "" && after.value !== "") d = parseFloat(after.value) - parseFloat(before.value);
+      setAns(q.id, "delta", isFinite(d) ? d : "");
+      paint(); hideErr();
+    }
+    function cell(label, node, val) {
+      var box = el("div", "delta-cell");
+      var l = el("label", ""); l.textContent = label;
+      node.value = val;
+      node.addEventListener("input", sync);
+      box.appendChild(l); box.appendChild(node);
+      return box;
+    }
+    var before = el("input", ""); before.type = "number";
+    var after = el("input", ""); after.type = "number";
+    [before, after].forEach(function (i) {
+      if (q.min !== undefined) i.min = q.min;
+      if (q.max !== undefined) i.max = q.max;
+    });
+    wrap.appendChild(cell(q.before_label || "Before", before, a.before !== undefined ? a.before : ""));
+    wrap.appendChild(cell(q.after_label || "After", after, a.after !== undefined ? a.after : ""));
+    var outBox = el("div", "delta-cell");
+    var ol = el("label", ""); ol.textContent = "Change";
+    outBox.appendChild(ol); outBox.appendChild(out);
+    wrap.appendChild(outBox);
+    paint();
+    return wrap;
+  }
+
+  function renderConceptTest(q) {
+    var wrap = el("div", "concept-test");
+    if (q.concept_html && window.BeaconQ) {
+      var c = el("div", "concept-html");
+      window.BeaconQ.richInto(c, q.concept_html, logicCtx(), q.concept || "\u2026");
+      wrap.appendChild(c);
+    } else if (q.concept) {
+      var p = el("p", "concept"); p.textContent = q.concept;
+      wrap.appendChild(p);
+    }
+    if (q.media && q.media.src) wrap.appendChild(renderMedia(q.media));
+    var grid = renderGrid(q, false);
+    if (grid) wrap.appendChild(grid);
+    return wrap;
+  }
+
+  function renderLoop(q) {
+    var wrap = el("div", "loopq");
+    var a = answers[q.id] || {};
+    (q.items || []).forEach(function (it) {
+      var row = el("div", "loop-row");
+      var lbl = el("div", "loop-label");
+      lbl.textContent = (q.prompt_template || "{label}").replace("{label}", it.label);
+      row.appendChild(lbl);
+      var inp;
+      if (q.child === "numeric") {
+        inp = el("input", ""); inp.type = "number";
+        if (q.min !== undefined) inp.min = q.min;
+        if (q.max !== undefined) inp.max = q.max;
+      } else {
+        inp = el("textarea", "");
+        inp.rows = q.text_rows || 2;
+        inp.placeholder = q.placeholder || "";
+      }
+      inp.value = a[it.code] !== undefined ? a[it.code] : "";
+      inp.addEventListener("input", function () { setAns(q.id, it.code, inp.value); hideErr(); });
+      row.appendChild(inp);
+      wrap.appendChild(row);
+    });
+    return wrap;
+  }
+
+  function renderTextBlock(q) {
+    var wrap = el("div", "textblock");
+    if (q.body_html && window.BeaconQ) window.BeaconQ.richInto(wrap, q.body_html, logicCtx(), q.body || "");
+    else { var p = el("p", ""); p.textContent = q.body || ""; wrap.appendChild(p); }
+    return wrap;
   }
 
   function renderGrid(q, semantic) {
@@ -1175,6 +1403,12 @@
     switch (q.type) {
       case "single_select": body = renderOptions(q, false); break;
       case "multi_select": body = renderOptions(q, true); break;
+      case "date": body = renderDate(q); break;
+      case "numeric_matrix": body = renderNumMatrix(q); break;
+      case "delta": body = renderDelta(q); break;
+      case "concept_test": body = renderConceptTest(q); break;
+      case "loop": body = renderLoop(q); break;
+      case "text_block": body = renderTextBlock(q); break;
       case "rating_grid": body = renderGrid(q, false); break;
       case "semantic_diff": body = renderGrid(q, true); break;
       case "sum_to_100": body = renderSum100(q); break;
@@ -1300,6 +1534,33 @@
       var n = Number(getAns(q.id, "_"));
       if (isNaN(n) || n < q.min || n > q.max) {
         showErr("Please enter a value between " + q.min + " and " + q.max + "."); return false;
+      }
+    }
+    if (q.type === "numeric_matrix") {
+      var na = answers[q.id] || {};
+      for (var ri = 0; ri < (q.rows || []).length; ri++) {
+        var rr = q.rows[ri], rv = na[rr.code];
+        if (rv === undefined || rv === "") continue;
+        if (!isNum(rv)) { showErr(rr.label + ": please enter a number."); return false; }
+        if (q.min !== undefined && parseFloat(rv) < q.min) { showErr(rr.label + " must be at least " + q.min + "."); return false; }
+        if (q.max !== undefined && parseFloat(rv) > q.max) { showErr(rr.label + " must be at most " + q.max + "."); return false; }
+      }
+    }
+    if (q.type === "delta") {
+      var da = answers[q.id] || {}, need = ["before", "after"];
+      for (var di = 0; di < 2; di++) {
+        var dv = da[need[di]];
+        if (dv === undefined || dv === "") continue;
+        if (!isNum(dv)) { showErr("Please enter numbers only."); return false; }
+        if (q.min !== undefined && parseFloat(dv) < q.min) { showErr("Values must be at least " + q.min + "."); return false; }
+        if (q.max !== undefined && parseFloat(dv) > q.max) { showErr("Values must be at most " + q.max + "."); return false; }
+      }
+    }
+    if (q.type === "loop" && q.child === "numeric") {
+      var la = answers[q.id] || {};
+      for (var li = 0; li < (q.items || []).length; li++) {
+        var lv = la[q.items[li].code];
+        if (lv !== undefined && lv !== "" && !isNum(lv)) { showErr(q.items[li].label + ": please enter a number."); return false; }
       }
     }
     if (q.type === "open_text" && q.required && q.min_words) {
@@ -1477,8 +1738,8 @@
       }).then(function (r) { return r.json(); }).then(function (res) {
         var card = el("div", "card");
         card.appendChild(el("div", "done-icon", "&#10003;"));
-        card.appendChild(el("h1", null, "Thank you"));
-        card.appendChild(el("p", null, "Your responses have been recorded. Thank you for the " +
+        card.appendChild(el("h1", null, SPEC.thanks_title || "Thank you"));
+        card.appendChild(el("p", null, SPEC.thanks_text || "Your responses have been recorded. Thank you for the " +
           "time and clinical insight you have given this study."));
         var flags = res.flags || [];
         card.appendChild(el("div", "summary",
@@ -1690,7 +1951,14 @@
         ["session_id", "answers", "cur"].forEach(function (k) { store(k); });
       }
     } catch (e) {}
-    fetch("/api/spec/" + STUDY.slug).then(function (r) { return r.json(); }).then(function (spec) {
+    try {
+      LANG = new URLSearchParams(location.search).get("lang") || recall("lang") || "";
+    } catch (e) {}
+    loadSpec();
+  }
+
+  function loadSpec() {
+    fetch("/api/spec/" + STUDY.slug + (LANG ? "?lang=" + encodeURIComponent(LANG) : "")).then(function (r) { return r.json(); }).then(function (spec) {
       SPEC = spec;
       CONJOINT = spec.conjoint;
       NARR = spec.narration;
@@ -1704,6 +1972,8 @@
         if (soundOn && $("#welcome") && $("#welcome").parentElement) playClip("welcome");
       });
       wireWelcomeAudio();
+      setupLangPicker();
+      applyWelcomeCopy();
 
       var savedSid = recall("session_id");
       var resume = savedSid
@@ -1750,7 +2020,9 @@
   function startFresh() {
     return fetch("/api/start", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ is_test: IS_TEST, study: STUDY.slug })
+      body: JSON.stringify({ is_test: IS_TEST, study: STUDY.slug,
+                             language: SPEC.render_language || LANG || "",
+                             embedded: readEmbedded() })
     }).then(function (r) { return r.json(); }).then(function (s) {
       SESSION = s;
       answers = {};

@@ -24,6 +24,8 @@ from flask import (Blueprint, abort, current_app, jsonify, render_template, requ
 
 from core.ai_detect import MAX_TEXT, ai_settings, score_text
 from core.conjoint import assignment_for
+from core.i18n import (LANG_BY_CODE, apply_language, default_language, study_languages,
+                       valid_language)
 from core.qc import qc_flags
 from core.seed import load_task_map
 from core.survey_spec import TERMINATE_TEXT
@@ -82,7 +84,9 @@ def spec(slug="beacon"):
     study = Study.get(slug)
     if not study:
         return jsonify({"error": "unknown study"}), 404
-    cfg = study.cfg
+    # ?lang= renders a globalised study: respondent-visible strings merged over the
+    # default language; team-facing strings and the QC engine always use the default.
+    cfg = apply_language(study.cfg, request.args.get("lang"))
     conj = cfg.get("conjoint")
     if conj and isinstance(conj.get("tasks"), list):
         conj = dict(conj, tasks={str(i + 1): t for i, t in enumerate(conj["tasks"])})
@@ -99,6 +103,16 @@ def spec(slug="beacon"):
         "tpp": cfg.get("tpp", {}),
         # study-wide AI-answer check settings; questions can override with ai_check/ai_action
         "ai_check": cfg.get("qc", {}).get("ai", {}),
+        # globalisation + flow objects
+        "default_language": default_language(study.cfg),
+        "render_language": cfg.get("render_language") or default_language(study.cfg),
+        "render_dir": cfg.get("render_dir", "ltr"),
+        "languages": [LANG_BY_CODE.get(c, {"code": c, "native": c, "dir": "ltr"})
+                      for c in study_languages(study.cfg)],
+        "embedded": [e.get("name") for e in cfg.get("embedded", []) or [] if e.get("name")],
+        "randomize_pages": bool(cfg.get("randomize_pages")),
+        "welcome_title": cfg.get("welcome_title"), "welcome_text": cfg.get("welcome_text"),
+        "thanks_title": cfg.get("thanks_title"), "thanks_text": cfg.get("thanks_text"),
     })
 
 
@@ -111,8 +125,14 @@ def start():
         return jsonify({"error": "unknown study"}), 404
     if not study.is_live:
         return jsonify({"error": "study not live"}), 403
+    lang = str(body.get("language") or "")[:12]
+    if lang and not valid_language(lang):
+        lang = ""
+    wanted = [e.get("name") for e in study.cfg.get("embedded", []) or [] if e.get("name")]
+    sent = body.get("embedded") if isinstance(body.get("embedded"), dict) else {}
+    embedded = {k: str(v)[:200] for k, v in sent.items() if k in wanted}
     resp = Respondent.create(study, bool(body.get("is_test")),
-                             request.headers.get("User-Agent", ""))
+                             request.headers.get("User-Agent", ""), lang, embedded)
     design = study.cfg.get("conjoint")
     task_map = load_task_map() if slug == "beacon" else None
     assignment = (assignment_for(resp.code, design, task_map) if design

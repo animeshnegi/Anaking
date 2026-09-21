@@ -17,12 +17,15 @@ Anaking/
 ├── routes/             one file per app, each mounted on its own URL
 │   ├── home.py         /            landing page + legacy redirects
 │   ├── survey.py       /survey/…    respondent survey + /api/* (incl. /api/check_text)
-│   ├── studio.py       /studio/     survey builder      + /api/studio/*
+│   ├── studio.py       /studio/     survey builder      + /api/studio/* (translate, move, outline)
 │   └── admin.py        /admin/      dashboard, exports  + /api/admin/*
 ├── core/               domain logic (no Flask routes in here)
 │   ├── conjoint.py     balanced design generator + per-respondent randomisation
 │   ├── qc.py           speeder / attention / straight-line / verbatim-quality flags
 │   ├── ai_detect.py    AI-generated & pasted answer detection + proofreading notes
+│   ├── i18n.py         language catalogue + extraction/merge of respondent-visible strings
+│   ├── translator.py   keyless machine translation (tag-safe), injectable for tests
+│   ├── outline.py      "Download Word Outline" - stdlib .docx questionnaire outline
 │   ├── reporting.py    flattening, export sheets, quick analysis
 │   ├── seed.py         seeds the BEACON study from survey_spec + data/design
 │   ├── survey_spec.py  the 24-question BEACON instrument
@@ -116,6 +119,55 @@ The plain-text `stem` is kept in step with the rich `stem_html` for exports, nar
 `static/css/preview-skin.css` is generated from `survey.css` by
 `python3 scripts/build_preview_skin.py` (re-run after changing survey styles).
 
+### Survey options & globalisation (Studio bar → SURVEY OPTIONS)
+
+The builder bar carries the full **SURVEY OPTIONS** menu: **Settings**, **Share survey
+preview** (test + respondent links, copy button), **Move survey…** (new slug - uploaded
+media and narration travel with it), **Duplicate**, **Download Word Outline** (a real
+`.docx` of the questionnaire, in any language, written with the standard library only),
+**Start Tracking** (go live), **Duplicate & Translate…** (copy the study and jump straight
+into its translation panel), **Globalize Survey…**, **Edit title and language…** and
+**Delete survey**.
+
+**Globalisation.** A study is authored in its default language (**English US** unless
+changed in *Edit title and language*) and can be translated into any of the ~36 approved
+field languages (`core/i18n.py`). Only **respondent-visible** strings are extractable -
+question stems and rich text, help text, placeholders, option / row / column labels,
+scale labels, section titles, the welcome & thank-you pages, walkthrough scene captions -
+so notes and directions aimed at the research team are *never* offered for translation
+and always stay in the default language. The **Globalize Survey** panel lists each
+language with its coverage bar and offers, per language:
+
+* **manual translation** - a searchable table (context · source · translation, *missing
+  only* filter) that saves through `POST /api/studio/translate`;
+* **AI-translate missing** - server-side machine translation
+  (`core/translator.py`, keyless Google endpoint, tag-safe for rich text) that fills only
+  the gaps and never overwrites manual work; when the network is unavailable every string
+  is reported as failed and simply stays for manual translation.
+
+Respondents pick their language on the welcome page (native names); the choice re-renders
+the survey (`/api/spec/<slug>?lang=es`), RTL languages flip the page direction, missing
+strings fall back to the default language, and each respondent's language is stored and
+exported as a `language` column.
+
+**Survey flow & objects** (also in the add-item library): Welcome Page / Thank You Page
+(copy lives in Settings → *Survey pages & flow*), **Question Page** (new section),
+**Question Loop** (ask one text/number question for a list of items), **Page Randomizer**
+(middle sections shuffle per respondent, seeded by their session) and **Embedded
+Variables** (names captured from the respondent link, e.g. `?panel=A` → exported as
+`ev_panel`).
+
+### The add-item library (Studio → + Add question)
+
+Grouped exactly like a commercial builder: **Questions** - Multiple Choice (incl. image
+options), Grid / Rating Scale, Rank Order, Scale, Text Entry, Numeric Entry, Net Promoter,
+Constant Sum, Numeric Matrix, Date, Delta (before / after / change); **Methodologies** -
+Max Diff experiment, Conjoint, Concept Test, Heatmap; **Survey flow** - Welcome Page,
+Thank You Page, Question Page, Question Loop, Page Randomizer; **Objects** - Embedded
+Variable, Text Block. Every type is fully editable (rows, scales, ranges, labels,
+placeholders, rich text, logic, media, styling) and every answer type flows into the
+flattened exports and the data dictionary.
+
 ### Written-answer quality: AI-generated & pasted text (all open-text questions)
 
 Free text is the part of a study most often faked - paste a chatbot answer into the box and
@@ -182,6 +234,7 @@ Production: `gunicorn -w 2 -b 0.0.0.0:8000 "app:create_app()"`
 ```bash
 python3 -m pytest                               # in-process suite, no server needed
 python3 -m pytest tests/test_ai_detect.py       # AI-answer detection, flags, queue, exports
+python3 -m pytest tests/test_globalize.py       # languages, translation, outline, new question types
 
 python3 app.py &                                # live-server scripts
 python3 scripts/e2e_live_server.py              # full flow, screen-outs, QC flags, exports
@@ -191,6 +244,7 @@ node scripts/dom/studio_workspace_test.js       # Studio workspace: outline/edit
 node scripts/dom/pipe_picker_test.js            # Studio pipe picker (needs jsdom: npm i jsdom)
 node scripts/dom/survey_ai_check_test.js        # respondent AI check: chip, gate, proofreading step
 node scripts/dom/ai_check_team_test.js          # Studio AI settings + Admin review queue
+node scripts/dom/globalize_test.js              # SURVEY OPTIONS menu, library, Globalize panel, language picker
 ```
 
 ## Study design material

@@ -577,3 +577,23 @@ h2.stem mark,.help mark,.opt mark{padding:0 3px;border-radius:3px}
   border:1px solid var(--line);border-radius:8px;resize:vertical}
 .proof-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
 .done-icon.note{background:var(--accent-soft);color:var(--accent)}
+
+/* globalisation + new question types */
+.lang-pick{display:flex;align-items:center;gap:10px;margin:14px 0 4px;justify-content:center}
+.lang-pick-ic{color:var(--accent);font-size:18px}
+.lang-pick select{padding:8px 12px;border-radius:10px;border:1px solid var(--line);font:inherit;background:#fff}
+.nummatrix{display:flex;flex-direction:column;gap:10px}
+.nm-row{display:flex;align-items:center;gap:12px}
+.nm-label{flex:1}
+.nm-row input{width:130px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.delta{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}
+.delta-cell{display:flex;flex-direction:column;gap:5px}
+.delta-cell label{font-size:12.5px;color:var(--muted);font-weight:600}
+.delta-cell input{width:130px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit}
+.delta-out{font-size:22px;font-weight:800;color:var(--accent);padding:4px 2px}
+.concept-html{background:#f7fafc;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.textblock p{margin:0 0 10px}
+.loopq{display:flex;flex-direction:column;gap:12px}
+.loop-row{display:flex;flex-direction:column;gap:5px}
+.loop-label{font-weight:600}
+.loop-row input,.loop-row textarea{padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;width:100%;box-sizing:border-box}
