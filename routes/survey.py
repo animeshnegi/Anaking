@@ -24,7 +24,7 @@ from flask import (Blueprint, abort, current_app, jsonify, render_template, requ
 
 from core.ai_detect import MAX_TEXT, ai_settings, score_text
 from core.conjoint import assignment_for
-from core.i18n import (LANG_BY_CODE, apply_language, default_language, study_languages,
+from core.i18n import (LANG_BY_CODE, apply_language, default_language, extract_strings,
                        valid_language)
 from core.qc import qc_flags
 from core.seed import load_task_map
@@ -46,10 +46,10 @@ def _survey_page(slug: str):
     is_test = request.path.rstrip("/").endswith("/test")
     # The respondent link only opens once the study is live; test mode always renders so
     # the team can preview a draft (the Studio's "Preview" button opens /survey/<slug>/test).
-    if not study.is_live and not is_test:
+    if not study.effective_live() and not is_test:
         return render_template("survey/not_live.html", slug=slug), 403
     return render_template("survey/survey.html", slug=slug, study_title=study.title,
-                           is_test=is_test, is_draft=not study.is_live)
+                           is_test=is_test, is_draft=not study.effective_live())
 
 
 @bp.get("/survey/")
@@ -78,15 +78,51 @@ def audio(name):
 
 
 # ---------------------------------------------------------------- API
+def _family_languages(home, base: dict) -> list[dict]:
+    """Default language first, then one entry per translation child (plus any legacy
+    inline translation), each tagged with the child slug respondents should use."""
+    codes = [default_language(base)]
+    for ch in home.children_of(home.slug):
+        c = ch.cfg.get("language")
+        if c and c not in codes:
+            codes.append(c)
+    for c in (base.get("translations") or {}):
+        if c not in codes:
+            codes.append(c)
+    out = []
+    for c in codes:
+        meta = LANG_BY_CODE.get(c, {"code": c, "native": c, "dir": "ltr"})
+        child = next((ch.slug for ch in home.children_of(home.slug)
+                      if ch.cfg.get("language") == c), "")
+        out.append(dict(meta, child=child))
+    return out
+
+
 @bp.get("/api/spec")
 @bp.get(f"/api/spec/{SLUG}")
 def spec(slug="beacon"):
     study = Study.get(slug)
     if not study:
         return jsonify({"error": "unknown study"}), 404
-    # ?lang= renders a globalised study: respondent-visible strings merged over the
-    # default language; team-facing strings and the QC engine always use the default.
-    cfg = apply_language(study.cfg, request.args.get("lang"))
+    # Child studies are translations of their parent: questions always come from the
+    # parent (so parent edits flow into every child) and the child contributes only its
+    # language + translation table.  ?lang= on a parent merges that language's child.
+    if study.is_child():
+        parent = study.parent_study()
+        if not parent:
+            return jsonify({"error": "parent study missing"}), 404
+        home, base = parent, parent.cfg
+        lang = study.cfg.get("language") or default_language(base)
+        table = (study.cfg.get("translations") or {}).get(lang) or {}
+        merged_src = dict(base)
+        merged_src["translations"] = {lang: table}
+    else:
+        home, base = study, study.cfg
+        lang = request.args.get("lang") or default_language(base)
+        merged_src = base
+    # respondent-visible strings merged over the default language; team-facing strings
+    # and the QC engine always use the default
+    cfg = apply_language(merged_src, lang)
     conj = cfg.get("conjoint")
     if conj and isinstance(conj.get("tasks"), list):
         conj = dict(conj, tasks={str(i + 1): t for i, t in enumerate(conj["tasks"])})
@@ -104,11 +140,14 @@ def spec(slug="beacon"):
         # study-wide AI-answer check settings; questions can override with ai_check/ai_action
         "ai_check": cfg.get("qc", {}).get("ai", {}),
         # globalisation + flow objects
-        "default_language": default_language(study.cfg),
+        "default_language": default_language(base),
         "render_language": cfg.get("render_language") or default_language(study.cfg),
         "render_dir": cfg.get("render_dir", "ltr"),
-        "languages": [LANG_BY_CODE.get(c, {"code": c, "native": c, "dir": "ltr"})
-                      for c in study_languages(study.cfg)],
+        "languages": _family_languages(home, base),
+        # the original wording of every respondent string, so respondents can flip any
+        # question back to the default language whenever they prefer it
+        "default_text": ({} if cfg.get("render_language") == default_language(base)
+                         else {x["key"]: x["text"] for x in extract_strings(base)}),
         "embedded": [e.get("name") for e in cfg.get("embedded", []) or [] if e.get("name")],
         "randomize_pages": bool(cfg.get("randomize_pages")),
         "welcome_title": cfg.get("welcome_title"), "welcome_text": cfg.get("welcome_text"),
@@ -123,7 +162,7 @@ def start():
     study = Study.get(slug)
     if not study:
         return jsonify({"error": "unknown study"}), 404
-    if not study.is_live:
+    if not study.effective_live():
         return jsonify({"error": "study not live"}), 403
     lang = str(body.get("language") or "")[:12]
     if lang and not valid_language(lang):

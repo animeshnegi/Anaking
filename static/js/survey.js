@@ -30,6 +30,7 @@
   var pendingDwell = null;
   var MIN_DWELL = 12;
   var LANG = "";           // respondent language, from ?lang= or the on-welcome picker
+  var ORIG = {};           // question ids the respondent wants in the parent (original) language
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var el = function (tag, cls, html) {
@@ -71,7 +72,17 @@
       if (l.code === SPEC.render_language) o.selected = true;
       sel.appendChild(o);
     });
-    sel.addEventListener("change", function () { loadSpecLang(sel.value); });
+    sel.addEventListener("change", function () {
+      var m = null;
+      SPEC.languages.forEach(function (l) { if (l.code === sel.value) m = l; });
+      if (m && m.child && m.code !== SPEC.default_language) {
+        // each language is its own child survey with its own link and data
+        var qs = location.search.replace(/^\?/, "");
+        location.href = "/survey/" + m.child + (IS_TEST ? "/test" : "") + (qs ? "?" + qs : "");
+      } else {
+        loadSpecLang(sel.value);
+      }
+    });
     row.appendChild(sel);
     if (host && host.parentElement) host.parentElement.insertBefore(row, host);
   }
@@ -1630,13 +1641,58 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // When the respondent is on a translated (child) survey, they can flip any single
+  // question back to the original wording - or back again - with the chip in the header.
+  function locQ(q) {
+    var dt = SPEC.default_text;
+    if (!dt || !ORIG[q.id]) return q;
+    var c = JSON.parse(JSON.stringify(q));
+    function g(k) { return dt["q:" + q.id + ":" + k]; }
+    ["stem_html", "help_html", "placeholder", "vignette", "concept", "concept_html",
+     "body", "body_html", "before_label", "after_label"].forEach(function (k) {
+      var t = g(k);
+      if (t !== undefined) c[k] = t;
+    });
+    if (g("stem_html")) c.stem = (window.BeaconQ ? window.BeaconQ.stripTags(g("stem_html")) : g("stem_html"));
+    (c.options || []).forEach(function (o) { var t = g("opt:" + o.code); if (t !== undefined) o.label = t; });
+    (c.rows || []).forEach(function (r) { var t = g("row:" + r.code); if (t !== undefined) r.label = t; });
+    (c.cols || []).forEach(function (r) { var t = g("col:" + r.code); if (t !== undefined) r.label = t; });
+    (c.items || []).forEach(function (it) { var t = g("loopitem:" + it.code); if (t !== undefined) it.label = t; });
+    if (c.scale) {
+      ["min_label", "max_label"].forEach(function (k) { var t = g(k); if (t !== undefined) c.scale[k] = t; });
+      (c.scale.face_labels || []).forEach(function (f, i) { var t = g("face:" + i); if (t !== undefined) c.scale.face_labels[i] = t; });
+    }
+    return c;
+  }
+
+  function langChip(q) {
+    var dt = SPEC.default_text;
+    if (!dt || !Object.keys(dt).length || SPEC.render_language === SPEC.default_language) return null;
+    var meta = null;
+    (SPEC.languages || []).forEach(function (l) { if (l.code === SPEC.render_language) meta = l; });
+    var chip = el("button", "i18n-chip");
+    chip.type = "button";
+    chip.title = "Switch just this question between " + (meta ? meta.native : SPEC.render_language) + " and the original";
+    chip.textContent = ORIG[q.id] ? "\u21C4 " + (meta ? meta.native : "translated") : "\u21C4 original";
+    chip.addEventListener("click", function () {
+      ORIG[q.id] = !ORIG[q.id];
+      render();
+    });
+    return chip;
+  }
+
   function render() {
     var st = steps[cur];
     stopNarration();
     pendingDwell = null;
     if (dwellTimer) { clearInterval(dwellTimer); dwellTimer = null; }
 
-    var node = st.kind === "task" ? renderConjoint(st) : renderQuestion(st.q);
+    var node = st.kind === "task" ? renderConjoint(st) : renderQuestion(locQ(st.q));
+    var chip = st.kind === "task" ? null : langChip(st.q);
+    if (chip && node.insertBefore) {
+      var stemH = node.querySelector(".stem");
+      if (stemH) node.insertBefore(chip, stemH); else node.appendChild(chip);
+    }
     show(node);
     if (pendingDwell) { startDwell(pendingDwell); pendingDwell = null; }
 

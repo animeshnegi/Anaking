@@ -29,6 +29,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       { id: "Q2", section: "S2", type: "open_text", stem: "Why?" }],
     explainer_scenes: []
   };
+  await req("POST", "/api/studio/delete", JSON.stringify({ slug: "globalize-test" }));   // clear leftovers from earlier runs
   const slug = JSON.parse((await req("POST", "/api/studio/save",
     JSON.stringify({ title: "Globalize Test", cfg }))).body).slug;
   await req("POST", "/api/studio/status", JSON.stringify({ slug, status: "live" }));
@@ -72,25 +73,40 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   $('[data-act="tl-save"]').click(); await sleep(700);
   check("title saved from the dialog", $("#ed-title").value === "Renamed Global");
 
-  // --- Globalize panel: add language, translate by hand, save
+  // --- Globalize panel: parent -> child translation model
   $('[data-act="sopts"]').click(); await sleep(20);
   $('[data-act="so-global"]').click(); await sleep(1400);
-  check("Globalize panel opens with the add-language select",
-    !!$("#lang-add-sel") && /respondent-visible text is translated/.test($("#st-modal").textContent),
-    $("#st-modal") ? $("#st-modal").textContent.slice(0, 120) : "no modal");
+  check("Globalize panel explains the parent/child model",
+    !!$("#lang-add-sel") && /parent/.test($("#st-modal").textContent) && /child/.test($("#st-modal").textContent),
+    $("#st-modal") ? $("#st-modal").textContent.slice(0, 160) : "no modal");
   const selAdd = $("#lang-add-sel");
   selAdd.value = "es"; fire(selAdd, "change");
-  $('[data-act="lang-add"]').click(); await sleep(1400);
-  check("Spanish added and listed", $$(".st-lang-row").length === 1 && /Español/.test($(".st-lang-row").textContent));
-  const ta = $('textarea[data-tr="q:Q1:stem_html"]');   // the studio keeps a rich stem, so it is the html key
+  $('[data-act="lang-add"]').click(); await sleep(1600);
+  const childSlug = slug + "--es";
+  check("creating a language opens its child survey editor",
+    !!$(".st-child-note") && /Child of/.test($(".st-child-note").textContent),
+    $(".st-child-note") ? $(".st-child-note").textContent : "no child note");
+  const ta = $('textarea[data-tr="q:Q1:stem_html"]');
   const taRow = ta && ta.closest(".st-tr-row");
-  check("translation table shows source text with context",
+  check("child editor lists the parent's strings with context",
     !!taRow && /Pick one/.test(taRow.querySelector(".st-tr-src").textContent) && /Q1/.test(taRow.querySelector(".st-tr-ctx").textContent));
   ta.value = "Elige uno"; fire(ta, "input");
-  $('[data-act="lang-save"]').click(); await sleep(1400);
-  const cfg1 = await saved();
-  check("manual translation stored on the study", cfg1.translations && cfg1.translations.es["q:Q1:stem_html"] === "Elige uno", JSON.stringify(cfg1.translations));
-  check("coverage bar reflects the save", /\d+%/.test($(".st-lang-row").textContent));
+  $('[data-act="lang-save"]').click(); await sleep(1600);
+  const childCfg = JSON.parse(await get("/api/studio/study?slug=" + childSlug)).cfg;
+  const parentCfgNow = JSON.parse(await get("/api/studio/study?slug=" + slug)).cfg;
+  check("translation stored on the child while the parent stays intact",
+    childCfg.translations && childCfg.translations.es["q:Q1:stem_html"] === "Elige uno" &&
+    !(parentCfgNow.translations || {}).es, JSON.stringify(childCfg.translations));
+  check("child survey is connected to the parent and carries no question copy",
+    childCfg.parent === slug && !(childCfg.questions || []).length);
+  $('[data-act="child-open-parent"]').click(); await sleep(1000);
+  check("Open parent returns to the parent builder", $("#ed-title") && $("#ed-title").value === "Renamed Global");
+  $('[data-act="sopts"]').click(); await sleep(20);
+  $('[data-act="so-global"]').click(); await sleep(1200);
+  check("parent panel lists the child survey with coverage",
+    $$(".st-lang-row").length === 1 && /Español/.test($(".st-lang-row").textContent) &&
+    /child survey \//.test($(".st-lang-row").textContent),
+    $(".st-lang-row") ? $(".st-lang-row").textContent : "none");
   $('[data-act="modal-close"]').click(); await sleep(20);
 
   // --- library: grouped add-item picker with every reference entry
@@ -156,14 +172,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     cfg2.embedded.map(e => e.name).join() === "panel,rid" && cfg2.randomize_pages === true,
     JSON.stringify({ wt: cfg2.welcome_title, emb: cfg2.embedded, rp: cfg2.randomize_pages }));
 
-  // --- seed the Spanish welcome + question text like the panel would
+  // --- seed the Spanish welcome copy on the child like the panel would
   await req("POST", "/api/studio/translate", JSON.stringify({
-    slug, lang: "es", strings: {
+    slug: childSlug, lang: "es", strings: {
       "study:welcome_title": "Bienvenido", "study:welcome_text": "Diez minutos de su tiempo.",
-      "q:Q1:stem_html": "Elige uno", "q:Q2:stem": "¿Por qué?" } }));
+      "q:Q2:stem": "\u00BFPor qu\u00E9?" } }));
 
-  // --- respondent side: language picker + translated welcome copy
-  const url = "/survey/" + slug + "/test?panel=A";
+  // --- respondent side: child survey, family picker, per-question original toggle
+  const url = "/survey/" + childSlug + "/test?panel=A";
   const dom2 = new JSDOM(await get(url), { url: BASE + url, runScripts: "outside-only", pretendToBeVisual: true });
   const w2 = dom2.window;
   w2.scrollTo = () => {}; w2.requestAnimationFrame = fn => setTimeout(fn, 0);
@@ -174,21 +190,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       .then(x => ({ ok: x.status < 400, status: x.status, json: () => Promise.resolve(JSON.parse(x.body)) }));
   };
   const errs2 = []; w2.addEventListener("error", e => errs2.push(e.message));
-  w2.STUDY = { slug };
+  w2.STUDY = { slug: childSlug };
   for (const f of ["qlogic.js", "explainer.js", "survey.js"]) w2.eval(await get("/static/js/" + f));
   await sleep(900);
-  const $2 = s => w2.document.querySelector(s), $$2 = s => [...w2.document.querySelectorAll(s)];
-  check("welcome copy comes from the study settings", $2("#welcome h1").textContent === "Welcome to the global study", $2("#welcome h1").textContent);
+  const $2 = s2 => w2.document.querySelector(s2), $$2 = s2 => [...w2.document.querySelectorAll(s2)];
+  check("child survey welcome renders the Spanish copy", $2("#welcome h1").textContent === "Bienvenido", $2("#welcome h1").textContent);
   const pick = $2("#lang-pick select");
-  check("language picker lists native names", !!pick && [...pick.options].map(o => o.textContent).join("|").includes("Español"),
-    pick ? [...pick.options].map(o => o.textContent).join("|") : "no picker");
-  pick.value = "es"; fire(pick, "change"); await sleep(600);
-  check("switching language re-renders the welcome in Spanish", $2("#welcome h1").textContent === "Bienvenido", $2("#welcome h1").textContent);
-  check("spec merge reaches the questions", w2.BEACON_SPEC_TEST === undefined ? true : true); // spec kept internal; covered by API tests
+  check("language picker lists the whole family with native names",
+    !!pick && [...pick.options].map(o => o.value).join("|") === "en-US|es" && /Español/.test(pick.textContent),
+    pick ? [...pick.options].map(o => o.value).join("|") : "no picker");
   w2.document.querySelector("#start-btn").click(); await sleep(500);
-  check("survey starts in the chosen language", !!w2.document.querySelector("#app .card") || /Q1|Pick|Elige/.test(w2.document.body.textContent));
+  check("first question renders translated", /Elige uno/.test($2("#app .card").textContent), $2("#app .card").textContent.slice(0, 120));
+  const chip = $2(".i18n-chip");
+  check("respondent can flip a question to the original wording", !!chip && /original/.test(chip.textContent));
+  chip.click(); await sleep(60);
+  check("flipped question shows the parent wording", /Pick one/.test($2("#app .card").textContent) && /Español/.test($2(".i18n-chip").textContent), $2("#app .card .stem").textContent);
+  $2(".i18n-chip").click(); await sleep(60);
+  check("flipping back restores the translation", /Elige uno/.test($2("#app .card").textContent));
   check("no JS errors in studio or survey", errs.length === 0 && errs2.length === 0, errs.concat(errs2).join("; "));
 
+  await req("POST", "/api/studio/delete", JSON.stringify({ slug: childSlug }));
   await req("POST", "/api/studio/delete", JSON.stringify({ slug }));
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error("ERR", e); process.exit(1); });

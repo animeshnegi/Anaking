@@ -192,13 +192,37 @@ class Study:
     @staticmethod
     def list_with_counts() -> list[dict]:
         rows = get_db().execute(
-            "SELECT s.slug, s.title, s.status, s.updated_at, "
+            "SELECT s.slug, s.title, s.status, s.updated_at, s.cfg, "
             "(SELECT COUNT(*) FROM respondents r WHERE r.study_id=s.id) AS n, "
             "(SELECT COUNT(*) FROM respondents r WHERE r.study_id=s.id AND "
             "r.status='complete') AS c FROM studies s ORDER BY s.id").fetchall()
-        return [{"slug": r["slug"], "title": r["title"], "status": r["status"],
-                 "updated_at": r["updated_at"], "started": r["n"], "complete": r["c"]}
-                for r in rows]
+        out = []
+        for r in rows:
+            cfg = json.loads(r["cfg"]) if r["cfg"] else {}
+            out.append({"slug": r["slug"], "title": r["title"], "status": r["status"],
+                        "updated_at": r["updated_at"], "started": r["n"], "complete": r["c"],
+                        "parent": cfg.get("parent") or "", "language": cfg.get("language") or ""})
+        return out
+
+    @staticmethod
+    def children_of(slug: str) -> list["Study"]:
+        """Translation children: studies whose config points at ``slug`` as parent."""
+        return [st for st in (Study.get(r["slug"]) for r in get_db().execute(
+            "SELECT slug FROM studies").fetchall())
+                if st and st.cfg.get("parent") == slug]
+
+    def is_child(self) -> bool:
+        return bool(self.cfg.get("parent"))
+
+    def parent_study(self) -> "Study | None":
+        return Study.get(self.cfg.get("parent") or "") if self.is_child() else None
+
+    def effective_live(self) -> bool:
+        """A translation child is live exactly when its parent is."""
+        if self.is_child():
+            par = self.parent_study()
+            return bool(par and par.status == "live")
+        return self.status == "live"
 
     # ---- mutations
     @staticmethod
@@ -255,6 +279,12 @@ class Study:
         with write_lock, conn:
             conn.execute("UPDATE studies SET status=?, updated_at=? WHERE slug=?",
                          (status, now(), slug))
+
+    @staticmethod
+    def delete_with_children(slug: str) -> None:
+        for child in Study.children_of(slug):
+            Study.delete(child.slug)
+        Study.delete(slug)
 
     @staticmethod
     def delete(slug: str) -> None:

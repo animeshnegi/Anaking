@@ -266,6 +266,7 @@
       return '<div class="st-card" data-slug="' + esc(s.slug) + '">' +
         '<div class="st-card-top"><h3>' + esc(s.title) + '</h3><span class="st-pill ' + s.status + '">' + s.status + "</span></div>" +
         '<div class="st-meta">/survey/' + esc(s.slug) + " \u00B7 updated " + esc(ago(s.updated_at)) + "</div>" +
+        (s.parent ? '<div class="st-meta st-child-badge">\u21B3 child of /' + esc(s.parent) + " \u00B7 " + esc(langMeta(s.language).native) + "</div>" : "") +
         '<div class="st-stats"><div><strong>' + s.started + "</strong><span>started</span></div><div><strong>" + s.complete + "</strong><span>complete</span></div>" +
         '<div class="st-stat-bar"><i style="width:' + pct + '%"></i></div><span class="st-meta">' + pct + "% completion</span></div>" +
         '<div class="st-card-actions">' +
@@ -286,7 +287,7 @@
     api("/api/studio/study?slug=" + encodeURIComponent(slug))
       .then(function (s) {
         if (s.error) { toast("Study not found: /" + slug); loadList(); return; }
-        cur = s; tab = "questions"; sel = s.cfg.questions.length ? 0 : -1;
+        cur = s; tab = "questions"; sel = (s.cfg.questions || []).length ? 0 : -1;
         auto.dirty = false; auto.error = null; auto.lastSaved = null;
         renderEditor();
         if (location.hash !== "#" + slug) history.replaceState(null, "", location.pathname + location.search + "#" + slug);
@@ -295,6 +296,7 @@
   }
 
   function renderEditor() {
+    if (cur && cur.cfg && cur.cfg.parent) { renderChildEditor(); return; }
     var c = cur.cfg;
     var html = '<div class="st-bar">' +
       '<button class="st-btn ghost" data-act="back" title="Back to all studies">\u2190 Studies</button>' +
@@ -480,6 +482,9 @@
   var askCb = null;
 
   // ------------------------------------------------------------ Globalize Survey panel
+  // Parent/child model: the parent survey stays intact and is the default; every
+  // language becomes a *child* study that stores only its translation table and reads
+  // its questions from the parent, so parent edits flow into every child at once.
   function openLangPanel(lang) {
     langPanel.lang = lang || null;
     langPanel.q = "";
@@ -488,16 +493,59 @@
   }
   function refreshLangPanel() {
     var base = "/api/studio/strings?study=" + encodeURIComponent(cur.slug);
-    api(base).then(function (d) {
-      if (!langPanel.lang && d.languages && d.languages.length) langPanel.lang = d.languages[0];
-      if (langPanel.lang) return api(base + "&lang=" + encodeURIComponent(langPanel.lang)).then(function (d2) { langPanel.data = d2; renderLangPanel(); });
-      langPanel.data = d; renderLangPanel();
+    Promise.all([api(base), api("/api/studio/children?study=" + encodeURIComponent(cur.slug))])
+      .then(function (r) {
+        langPanel.data = r[0];
+        langPanel.children = r[1].children || [];
+        renderLangPanel();
+      });
+  }
+  function saveTranslations() {
+    var out2 = {};
+    $$("#st-modal [data-tr], #lang-tr-host [data-tr]").forEach(function (n) { out2[n.getAttribute("data-tr")] = n.value; });
+    api("/api/studio/translate", { slug: cur.slug, lang: langPanel.lang, strings: out2 }).then(function (r) {
+      if (r.error) { toast("Save failed: " + r.error); return; }
+      toast("Saved - " + r.coverage.translated + " of " + r.coverage.total + " respondent strings translated");
+      syncTranslationsFromServer(function () {
+        if (cur.cfg.parent) {
+          api("/api/studio/strings?study=" + encodeURIComponent(cur.slug)).then(function (d) {
+            langPanel.data = d;
+            var host = document.getElementById("lang-tr-host");
+            if (host) host.innerHTML = trTableHtml();
+          });
+        } else refreshLangPanel();
+      });
+    });
+  }
+  function aiTranslate(b) {
+    var lg = b.getAttribute("data-lang") || langPanel.lang;
+    if (!lg) return;
+    var aiSlug = cur.slug;
+    if (!cur.cfg.parent) {
+      var m = ((langPanel.children || []).filter(function (x) { return x.language === lg; })[0] || {});
+      aiSlug = m.slug || cur.slug;
+    }
+    b.disabled = true; b.textContent = "Translating\u2026";
+    flushSave(function () {
+      api("/api/studio/autotranslate", { slug: aiSlug, lang: lg }).then(function (r) {
+        if (r.error) { toast("AI translate failed: " + r.error); refreshLangPanel(); return; }
+        var nf = Object.keys(r.failed || {}).length;
+        toast("AI translated " + r.translated + " string(s)" + (nf ? " \u00B7 " + nf + " could not be translated - finish them by hand" : ""));
+        syncTranslationsFromServer(function () {
+          if (cur.cfg.parent) {
+            api("/api/studio/strings?study=" + encodeURIComponent(cur.slug)).then(function (d) {
+              langPanel.data = d;
+              var host = document.getElementById("lang-tr-host");
+              if (host) host.innerHTML = trTableHtml();
+            });
+          } else refreshLangPanel();
+        });
+      });
     });
   }
   function syncTranslationsFromServer(then) {
     api("/api/studio/study?slug=" + encodeURIComponent(cur.slug)).then(function (s2) {
       cur.cfg = s2.cfg; cur.title = s2.title;
-      if (tab === "questions") { renderOutline(); renderEditorPane(); }
       if (then) then();
     });
   }
@@ -527,44 +575,76 @@
         '<textarea data-tr="' + esc(x.key) + '" rows="2" placeholder="Translation\u2026">' + esc(tv) + "</textarea></div>";
     });
     if (!rows) rows = '<div class="st-tr-row"><span></span><span class="st-meta">No strings match.</span><span></span></div>';
-    return '<div class="st-tr-row st-tr-head"><span>Context</span><span>' + esc(d.default_language) + " (team &amp; source)</span><span>" + esc(langPanel.lang) + "</span></div>" + rows;
+    return '<div class="st-tr-row st-tr-head"><span>Context</span><span>' + esc(d.default_language) + " (parent \u00B7 source)</span><span>" + esc(langPanel.lang) + "</span></div>" + rows;
+  }
+  function childCoverage(child) {
+    var d = langPanel.data, tbl = (child.translations || {})[child.language] || {};
+    var total = (d.strings || []).length;
+    var done = (d.strings || []).filter(function (x) { return (tbl[x.key] || "").trim(); }).length;
+    return total ? Math.round(100 * done / total) : 100;
   }
   function renderLangPanel() {
-    var d = langPanel.data, c = cur.cfg;
+    var d = langPanel.data;
     var defLang = d.default_language || "en-US";
     var html = '<div class="st-modal-head"><strong>Globalize Survey</strong>' +
-      '<span class="st-meta">Only respondent-visible text is translated - notes and directions for the team stay in ' + esc(defLang) + "</span>" +
+      '<span class="st-meta">The parent survey stays intact - each language becomes a connected child survey</span>' +
       '<button class="st-btn sm ghost" data-act="modal-close" type="button">\u2190 Back</button><button class="ex-close" data-act="modal-close" type="button">&times;</button></div>';
-    var langs = Object.keys(c.translations || {});
+    html += '<div class="st-note">This study (<b>' + esc(cur.slug) + "</b>) is the <b>parent</b> in " + esc(defLang) +
+      ". Every translation below is a <b>child survey</b> with its own respondent link and data; it reads its questions live from the parent, so updating the parent updates every child.</div>";
     html += '<div class="st-lang-list">';
-    if (!langs.length) html += '<div class="st-note">No translations yet. Add a language below, then translate it by hand or with AI.</div>';
-    langs.forEach(function (lc) {
-      var meta = langMeta(lc);
-      var tbl = c.translations[lc] || {};
-      var total = (d.strings || []).length;
-      var done = (d.strings || []).filter(function (x) { return (tbl[x.key] || "").trim(); }).length;
-      var pct = total ? Math.round(100 * done / total) : 100;
-      html += '<div class="st-lang-row' + (langPanel.lang === lc ? " on" : "") + '">' +
-        "<span><b>" + esc(meta.native) + "</b><small>" + esc(meta.name) + " \u00B7 " + esc(lc) + "</small></span>" +
+    if (!(langPanel.children || []).length) html += '<div class="st-note">No child surveys yet. Add a language below to create one.</div>';
+    (langPanel.children || []).forEach(function (ch) {
+      var meta = langMeta(ch.language);
+      var pct = childCoverage(ch);
+      html += '<div class="st-lang-row">' +
+        "<span><b>" + esc(meta.native) + "</b><small>child survey /" + esc(ch.slug) + " \u00B7 " + pct + "% translated</small></span>" +
         '<span class="st-lang-bar"><i style="width:' + pct + '%"></i></span><span class="st-meta">' + pct + "%</span>" +
-        '<span class="st-lang-tools"><button class="st-btn sm' + (langPanel.lang === lc ? "" : " on") + '" data-act="lang-open" data-lang="' + esc(lc) + '">Translate</button>' +
-        '<button class="st-btn sm" data-act="lang-ai" data-lang="' + esc(lc) + '">AI-translate missing</button>' +
-        '<button class="st-btn sm danger" data-act="lang-del" data-lang="' + esc(lc) + '">Remove</button></span></div>';
+        '<span class="st-lang-tools"><button class="st-btn sm on" data-act="child-open" data-slug="' + esc(ch.slug) + '">Translate</button>' +
+        '<button class="st-btn sm" data-act="lang-ai" data-lang="' + esc(ch.language) + '">AI-translate missing</button>' +
+        '<button class="st-btn sm" data-act="child-link" data-slug="' + esc(ch.slug) + '">Respondent link</button>' +
+        '<button class="st-btn sm danger" data-act="lang-del" data-lang="' + esc(ch.language) + '">Remove</button></span></div>';
     });
+    var have = (langPanel.children || []).map(function (ch) { return ch.language; });
     html += '<div class="st-lang-add"><select id="lang-add-sel">' +
-      LANGCAT.filter(function (l) { return l.code !== defLang && !(c.translations || {})[l.code]; }).map(function (l) {
+      LANGCAT.filter(function (l) { return l.code !== defLang && have.indexOf(l.code) < 0; }).map(function (l) {
         return '<option value="' + l.code + '">' + esc(l.name) + " (" + esc(l.native) + ")</option>"; }).join("") +
-      '</select><button class="st-btn on sm" data-act="lang-add">Add language</button></div></div>';
-    if (langPanel.lang) {
-      html += '<div class="st-lang-editor"><div class="st-lang-editor-head"><strong>' + esc(langMeta(langPanel.lang).native) + " translation</strong>" +
-        '<input id="lang-search" placeholder="Search text\u2026" value="' + esc(langPanel.q) + '">' +
-        '<label class="st-inline"><input type="checkbox" id="lang-missing"' + (langPanel.onlyMissing ? " checked" : "") + "> missing only</label>" +
-        '<span class="st-lang-grow"></span>' +
-        '<button class="st-btn sm" data-act="lang-ai">AI-translate missing</button>' +
-        '<button class="st-btn sm on" data-act="lang-save">Save translations</button></div>' +
-        '<div class="st-tr-table" id="lang-tr-host">' + trTableHtml() + "</div></div>";
-    }
+      '</select><button class="st-btn on sm" data-act="lang-add">Create child survey</button></div></div>';
     openModal(html, "st-langmodal");
+  }
+
+  // translation child editor: parent questions are managed by the parent, this page
+  // only translates the respondent-visible strings of this child's language
+  function renderChildEditor() {
+    var lang = cur.cfg.language || "";
+    var meta = langMeta(lang);
+    langPanel.lang = lang;
+    root.innerHTML = '<div class="st-bar">' +
+      '<button class="st-btn ghost" data-act="back" title="Back to all studies">\u2190 Studies</button>' +
+      '<input type="text" id="ed-title" class="st-title" value="' + esc(cur.title) + '" title="Child survey title">' +
+      '<div id="st-savestate" class="st-savestate"></div>' +
+      '<span class="st-child-note">Child of <b>' + esc(cur.cfg.parent) + "</b> \u00B7 " + esc(meta.native) + " \u2014 questions update with the parent</span>" +
+      '<button class="st-btn" data-act="child-open-parent">Open parent</button>' +
+      '<button class="st-btn play" data-act="viewlive">\u25B6 Preview translation</button>' +
+      "</div>" +
+      '<nav class="st-tabs"><button class="st-tab on">Translation</button></nav>' +
+      '<div id="st-panel" class="st-panel-host"><div class="st-page"><div class="st-panel">' +
+      '<div class="st-page-head"><h2>Translate into ' + esc(meta.native) + "</h2>" +
+      "<p>Only respondent-visible text is translated; notes and directions for the team stay in the parent language.</p></div>" +
+      '<div class="st-lang-editor"><div class="st-lang-editor-head"><strong>' + esc(meta.native) + " translation</strong>" +
+      '<input id="lang-search" placeholder="Search text\u2026" value="">' +
+      '<label class="st-inline"><input type="checkbox" id="lang-missing"> missing only</label>' +
+      '<span class="st-lang-grow"></span>' +
+      '<button class="st-btn sm" data-act="lang-ai">AI-translate missing</button>' +
+      '<button class="st-btn sm on" data-act="lang-save">Save translations</button></div>' +
+      '<div class="st-tr-table" id="lang-tr-host"><div class="st-meta">Loading strings\u2026</div></div></div>' +
+      "</div></div></div>";
+    renderSaveState();
+    api("/api/studio/strings?study=" + encodeURIComponent(cur.slug)).then(function (d) {
+      langPanel.data = d;
+      langPanel.lang = lang;
+      var host = document.getElementById("lang-tr-host");
+      if (host) host.innerHTML = trTableHtml();
+    });
   }
 
   // ------------------------------------------------------------ Survey options menu
@@ -1356,39 +1436,27 @@
     }
     if (act === "lang-add") {
       var la = val("lang-add-sel");
-      if (la) { cur.cfg.translations = cur.cfg.translations || {}; cur.cfg.translations[la] = {}; langPanel.lang = la; markChanged(); flushSave(refreshLangPanel); }
-    }
-    if (act === "lang-open") { langPanel.lang = b.getAttribute("data-lang"); refreshLangPanel(); }
-    if (act === "lang-del") {
-      var dl = b.getAttribute("data-lang");
-      if (confirm("Remove the " + dl + " translation? The default-language survey is not affected.")) {
-        delete cur.cfg.translations[dl];
-        if (langPanel.lang === dl) langPanel.lang = null;
-        markChanged(); flushSave(refreshLangPanel);
+      if (la) {
+        api("/api/studio/globalize", { slug: cur.slug, lang: la }).then(function (r) {
+          if (r.error) { toast("Could not create child: " + r.error); return; }
+          closeModal();
+          toast("Child survey /" + r.slug + " created" + (r.existing ? " (already existed)" : ""));
+          openEditor(r.slug);
+        });
       }
     }
-    if (act === "lang-ai") {
-      var lg = b.getAttribute("data-lang") || langPanel.lang;
-      if (!lg) return;
-      b.disabled = true; b.textContent = "Translating\u2026";
-      flushSave(function () {
-        api("/api/studio/autotranslate", { slug: cur.slug, lang: lg }).then(function (r) {
-          if (r.error) { toast("AI translate failed: " + r.error); refreshLangPanel(); return; }
-          var nf = Object.keys(r.failed || {}).length;
-          toast("AI translated " + r.translated + " string(s)" + (nf ? " \u00B7 " + nf + " could not be translated - finish them by hand" : ""));
-          syncTranslationsFromServer(refreshLangPanel);
-        });
-      });
+    if (act === "child-open") { closeModal(); openEditor(b.getAttribute("data-slug")); }
+    if (act === "child-open-parent") { openEditor(cur.cfg.parent); }
+    if (act === "child-link") { copyLink(b.getAttribute("data-slug")); }
+    if (act === "lang-del") {
+      var dl = b.getAttribute("data-lang");
+      var chSlug = ((langPanel.children || []).filter(function (x) { return x.language === dl; })[0] || {}).slug;
+      if (confirm("Remove the " + langMeta(dl).native + " child survey and its responses? The parent survey is not affected.")) {
+        api("/api/studio/delete", { slug: chSlug }).then(function () { refreshLangPanel(); });
+      }
     }
-    if (act === "lang-save") {
-      var out2 = {};
-      $$("#st-modal [data-tr]").forEach(function (n) { out2[n.getAttribute("data-tr")] = n.value; });
-      api("/api/studio/translate", { slug: cur.slug, lang: langPanel.lang, strings: out2 }).then(function (r) {
-        if (r.error) { toast("Save failed: " + r.error); return; }
-        toast("Saved - " + r.coverage.translated + " of " + r.coverage.total + " respondent strings translated");
-        syncTranslationsFromServer(refreshLangPanel);
-      });
-    }
+    if (act === "lang-ai") { aiTranslate(b); }
+    if (act === "lang-save") { saveTranslations(); }
     if (act === "tl-save") {
       var nt = (val("tl-title") || "").trim();
       if (nt) cur.title = nt;
@@ -1792,6 +1860,9 @@
     if (!b) return;
     var act = b.getAttribute("data-act");
     var slug = b.getAttribute("data-slug");
+    if (act === "child-open-parent") { if (cur) openEditor(cur.cfg.parent); return; }
+    if (act === "lang-save") { saveTranslations(); return; }
+    if (act === "lang-ai") { aiTranslate(b); return; }
     var i = Number(b.getAttribute("data-i"));
 
     if (act === "new") createStudy(blankCfg());

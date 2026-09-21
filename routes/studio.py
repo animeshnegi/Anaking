@@ -30,7 +30,9 @@ from flask import Blueprint, abort, current_app, jsonify, render_template, reque
 from werkzeug.utils import secure_filename
 
 from core.conjoint import make_conjoint
-from core.i18n import LANGUAGES, coverage, default_language, extract_strings, valid_language
+from core.i18n import (LANGUAGES, coverage, default_language, extract_strings,
+                       valid_language)
+LANGUAGES_MAP = {c: {"name": n, "native": nv, "dir": d} for c, n, nv, d in LANGUAGES}
 from core.narration import clip_duration
 from core.outline import build_outline
 from core.reporting import analysis_for
@@ -92,7 +94,7 @@ def status():
 def delete():
     slug = json_body().get("slug") or ""
     try:
-        Study.delete(slug)
+        Study.delete_with_children(slug)
     except StudyError as e:
         return error(e)
     # uploaded narration clips belong to the study - remove them with it
@@ -110,6 +112,48 @@ def languages():
                                   for c, n, nv, d in LANGUAGES]})
 
 
+def _base_of(study):
+    """The question config a study translates: its own, or its parent's when it is a
+    translation child.  Children therefore inherit every parent edit automatically."""
+    if study.is_child():
+        parent = study.parent_study()
+        return parent.cfg if parent else study.cfg
+    return study.cfg
+
+
+@bp.get("/api/studio/children")
+def children():
+    """The translation children of a parent study."""
+    study = Study.get(study_arg())
+    if not study:
+        return jsonify({"error": "unknown study"}), 404
+    return jsonify({"children": [
+        {"slug": ch.slug, "language": ch.cfg.get("language"),
+         "title": ch.title, "translations": ch.cfg.get("translations") or {},
+         "complete": 0} for ch in Study.children_of(study.slug)]})
+
+
+@bp.post("/api/studio/globalize")
+def globalize():
+    """Create (or return) the translation child for one language of a parent study."""
+    body = json_body()
+    parent = Study.get(body.get("slug") or "")
+    lang = body.get("lang") or ""
+    if not parent or parent.is_child():
+        return jsonify({"error": "unknown parent study"}), 404
+    if not valid_language(lang) or lang == default_language(parent.cfg):
+        return jsonify({"error": "bad language"}), 400
+    slug = f"{parent.slug}--{lang.lower()}"
+    if Study.get(slug):
+        return jsonify({"ok": True, "slug": slug, "existing": True})
+    meta = LANGUAGES_MAP.get(lang, {})
+    cfg = {"parent": parent.slug, "language": lang,
+           "translations": {lang: dict((parent.cfg.get("translations") or {}).get(lang) or {})},
+           "title": f"{parent.title} \u2013 {meta.get('native', lang)}"}
+    Study.save({"slug": slug, "title": cfg["title"], "cfg": cfg})
+    return jsonify({"ok": True, "slug": slug})
+
+
 @bp.get("/api/studio/strings")
 def strings():
     """The respondent-visible strings plus one language's translations, for the
@@ -117,12 +161,17 @@ def strings():
     study = Study.get(study_arg())
     if not study:
         return jsonify({"error": "unknown study"}), 404
-    lang = request.args.get("lang") or ""
-    strings = extract_strings(study.cfg)
+    base = _base_of(study)
+    lang = request.args.get("lang") or (study.cfg.get("language") if study.is_child() else "") or ""
+    strings = extract_strings(base)
     table = (study.cfg.get("translations") or {}).get(lang) or {}
-    return jsonify({"strings": strings, "default_language": default_language(study.cfg),
+    merged = dict(base)
+    if lang:
+        merged["translations"] = {lang: table}
+    return jsonify({"strings": strings, "default_language": default_language(base),
                     "language": lang, "translations": table,
-                    "coverage": coverage(study.cfg, lang) if lang else None,
+                    "parent": study.cfg.get("parent") or "",
+                    "coverage": coverage(merged, lang) if lang else None,
                     "languages": sorted((study.cfg.get("translations") or {}).keys())})
 
 
@@ -130,10 +179,15 @@ def strings():
 def move():
     body = json_body()
     old_slug = body.get("slug") or ""
+    kids = [ch.slug for ch in Study.children_of(old_slug)]
     try:
         new_slug = Study.move(old_slug, body.get("new_slug") or "")
     except StudyError as e:
         return error(e)
+    for kslug in kids:                      # keep translation children attached
+        ch = Study.get(kslug)
+        ch.cfg["parent"] = new_slug
+        Study.save({"slug": ch.slug, "title": ch.title, "cfg": ch.cfg})
     # uploaded media and narration clips are keyed by slug - they travel with the study
     for folder in (_media_dir, _narration_dir):
         src, dst = folder(secure_filename(old_slug)), folder(secure_filename(new_slug))
@@ -148,18 +202,26 @@ def outline():
     study = Study.get(study_arg())
     if not study:
         return jsonify({"error": "unknown study"}), 404
-    lang = request.args.get("lang") or None
-    data = build_outline(study.cfg, lang)
+    lang = request.args.get("lang") or (study.cfg.get("language") if study.is_child() else None)
+    data = build_outline(_base_of(study), lang)
     return attachment(data,
                       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                       f"{study.slug}_outline_{lang or default_language(study.cfg)}_{stamp()}.docx")
+
+
+def _merged_for(study, lang: str) -> dict:
+    study = Study.get(study.slug) or study          # re-read: translations may have saved
+    base = _base_of(study)
+    merged = dict(base)
+    merged["translations"] = {lang: (study.cfg.get("translations") or {}).get(lang) or {}}
+    return merged
 
 
 def _save_translations(slug: str, lang: str, strings: dict) -> None:
     study = Study.get(slug)
     cfg = study.cfg
     table = cfg.setdefault("translations", {}).setdefault(lang, {})
-    known = {x["key"] for x in extract_strings(cfg)}
+    known = {x["key"] for x in extract_strings(_base_of(study))}
     for key, text in (strings or {}).items():
         if key in known:
             if (text or "").strip():
@@ -179,12 +241,13 @@ def translate():
     """Manual translation: save respondent-visible strings for one language."""
     body = json_body()
     slug, lang = body.get("slug") or "", body.get("lang") or ""
-    if not Study.get(slug):
+    study = Study.get(slug)
+    if not study:
         return jsonify({"error": "unknown study"}), 404
-    if not valid_language(lang) or lang == default_language(Study.get(slug).cfg):
+    if not valid_language(lang) or lang == default_language(_base_of(study)):
         return jsonify({"error": "bad language"}), 400
     _save_translations(slug, lang, body.get("strings") or {})
-    return jsonify({"ok": True, "coverage": coverage(Study.get(slug).cfg, lang)})
+    return jsonify({"ok": True, "coverage": coverage(_merged_for(study, lang), lang)})
 
 
 @bp.post("/api/studio/autotranslate")
@@ -201,13 +264,13 @@ def autotranslate():
     if not study:
         return jsonify({"error": "unknown study"}), 404
     cfg = study.cfg
-    src = default_language(cfg)
+    src = default_language(_base_of(study))
     if not valid_language(lang) or lang == src:
         return jsonify({"error": "bad language"}), 400
     table = (cfg.get("translations") or {}).get(lang) or {}
     want = body.get("keys")
     strings, failed, done = {}, {}, 0
-    for x in extract_strings(cfg):
+    for x in extract_strings(_base_of(study)):
         if want is not None and x["key"] not in want:
             continue
         if (table.get(x["key"]) or "").strip():
@@ -222,7 +285,7 @@ def autotranslate():
     if strings:
         _save_translations(slug, lang, strings)
     return jsonify({"ok": True, "translated": done, "failed": failed,
-                    "coverage": coverage(Study.get(slug).cfg, lang)})
+                    "coverage": coverage(_merged_for(study, lang), lang)})
 
 
 @bp.post("/api/studio/make_conjoint")

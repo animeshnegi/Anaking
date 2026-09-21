@@ -113,18 +113,28 @@ def test_translate_html_keeps_tags_and_translates_text():
 
 # ---------------------------------------------------------------- Word outline
 def test_word_outline_is_a_real_docx_with_the_questionnaire():
-    cfg = dict(GLOBAL_CFG, translations={"es": {"q:Q1:stem": "Elige uno"}})
+    import copy
+    cfg = copy.deepcopy(GLOBAL_CFG)
+    cfg["questions"][1]["options"][0]["terminate"] = True     # screening / termination
+    cfg["questions"][2]["show_if"] = {"rules": [{"q": "Q1", "op": "selected", "value": "1"}]}
+    cfg["translations"] = {"es": {"q:Q1:stem": "Elige uno"}}
     data = build_outline(cfg)
     assert data[:2] == b"PK"
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         names = z.namelist()
         assert "[Content_Types].xml" in names and "word/document.xml" in names
         doc = z.read("word/document.xml").decode("utf-8")
-    assert "Global study" in doc and "Pick one" in doc and "Option A" in doc
-    assert "SECTION - Intro" in doc and "Thank-you:" in doc
+    # questions + options + applied logic, well formatted
+    assert "Global study" in doc and "Pick one" in doc
+    assert "-  1. Option A  [TERMINATES]" in doc and "-  2. Option B" in doc
+    assert "Show only if Q1 has selected 1" in doc
+    assert "screening: options marked TERMINATES end the survey" in doc
+    assert "Intro" in doc
+    # lean on purpose: no welcome / thank-you copy in the outline
+    assert "Diez minutos" not in doc and "That is everything" not in doc
     # globalised outline renders the translated respondent text
     doc_es = zipfile.ZipFile(io.BytesIO(build_outline(cfg, "es"))).read("word/document.xml").decode("utf-8")
-    assert "Elige uno" in doc_es and "language es" in doc_es
+    assert "Elige uno" in doc_es and "\u2013 es" in doc_es
 
 
 # ---------------------------------------------------------------- studio endpoints
@@ -286,6 +296,41 @@ def test_new_question_types_flow_into_the_export(client):
     assert row["C1_r1"] == "4"
     assert row["L1_i1"] == "notes on the first item"
     assert "TB" not in row                                     # text block stores nothing
+
+
+def test_child_surveys_follow_the_parent(client):
+    _save(client, GLOBAL_CFG, slug="par", title="Parent")
+    client.post("/api/studio/status", json={"slug": "par", "status": "live"})
+    r = client.post("/api/studio/globalize", json={"slug": "par", "lang": "es"}).get_json()
+    assert r["ok"] and r["slug"] == "par--es"
+    ch = client.get("/api/studio/children", query_string={"study": "par"}).get_json()["children"]
+    assert [c["slug"] for c in ch] == ["par--es"] and ch[0]["language"] == "es"
+    # the parent itself stays intact
+    assert client.get("/api/spec/par").get_json()["questions"][1]["stem"] == "Pick one"
+    # translate into the child
+    client.post("/api/studio/translate", json={"slug": "par--es", "lang": "es",
+                                               "strings": {"q:Q1:stem": "Elige uno"}})
+    sp = client.get("/api/spec/par--es").get_json()
+    assert sp["questions"][1]["stem"] == "Elige uno" and sp["render_language"] == "es"
+    codes = {l["code"]: l.get("child") for l in sp["languages"]}
+    assert codes["es"] == "par--es" and codes["en-US"] == ""
+    assert sp["default_text"]["q:Q2:stem"] == "Why?"        # original wording for the toggle
+    # a parent edit flows into the child automatically
+    cfg = client.get("/api/studio/study", query_string={"slug": "par"}).get_json()["cfg"]
+    cfg["questions"][2]["stem"] = "Why, exactly?"
+    client.post("/api/studio/save", json={"slug": "par", "title": "Parent", "cfg": cfg})
+    sp2 = client.get("/api/spec/par--es").get_json()
+    assert sp2["questions"][2]["stem"] == "Why, exactly?"
+    assert sp2["default_text"]["q:Q1:stem"] == "Pick one"
+    # the child is live exactly when the parent is
+    client.post("/api/studio/status", json={"slug": "par", "status": "closed"})
+    assert client.post("/api/start", json={"study": "par--es"}).status_code == 403
+    client.post("/api/studio/status", json={"slug": "par", "status": "live"})
+    st = client.post("/api/start", json={"study": "par--es", "language": "es"}).get_json()
+    assert st["session_id"]
+    # deleting the parent deletes its children
+    client.post("/api/studio/delete", json={"slug": "par"})
+    assert client.get("/api/spec/par--es").status_code == 404
 
 
 def test_spec_exposes_new_flow_objects(client):
