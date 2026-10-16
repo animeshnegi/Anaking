@@ -64,11 +64,22 @@ def build_answers(profile):
         elif t == "slider":
             a[qid] = {"_": profile.get(qid, (q["min"] + q["max"]) // 2)}
         elif t == "rating_grid":
-            base = profile.get("grid_base", 5)
-            a[qid] = {r["code"]: min(q["scale"]["max"], max(q["scale"]["min"], base + random.randint(-1, 1)))
+            if q.get("cols"):
+                codes = [c["code"] for c in q["cols"]]
+                if q.get("select") == "multi":
+                    a[qid] = {r["code"]: random.sample(codes, k=min(2, len(codes)))
+                              for r in q["rows"]}
+                else:
+                    a[qid] = {r["code"]: random.choice(codes) for r in q["rows"]}
+            else:
+                base = profile.get("grid_base", 5)
+                a[qid] = {r["code"]: min(q["scale"]["max"], max(q["scale"]["min"], base + random.randint(-1, 1)))
+                          for r in q["rows"]}
+                if profile.get("straightline") and qid == "Q7":
+                    a[qid] = {r["code"]: 7 for r in q["rows"]}
+        elif t == "rating_scale":
+            a[qid] = {r["code"]: random.randint(q["scale"]["min"], q["scale"]["max"])
                       for r in q["rows"]}
-            if profile.get("straightline") and qid == "Q7":
-                a[qid] = {r["code"]: 7 for r in q["rows"]}
         elif t == "semantic_diff":
             a[qid] = {r["code"]: random.randint(q["scale"]["min"], q["scale"]["max"]) for r in q["rows"]}
         elif t == "sum_to_100":

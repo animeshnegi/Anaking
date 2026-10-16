@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PROJECT BEACON — US Oncologist Brand Demand Study</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/explainer.css') }}?v=260921g">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/survey.css') }}?v=260921g">
-{% if is_test %}<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260921g">{% endif %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/survey.css') }}?v=261008b">
+{% if is_test %}<link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}?v=260921g">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/survey-test.css') }}?v=261008b">{% endif %}
 </head>
 <body>
 {#- Test mode is the research team's view (drafts are previewed here too); the respondent
@@ -27,9 +28,11 @@
     </div>
   </div>
   <div class="hud" id="hud" hidden>
-    <div class="hud-item" title="Sections completed">
+    <div class="hud-item" title="Survey progress">
       <svg class="ring" viewBox="0 0 36 36">
         <circle class="ring-bg" cx="18" cy="18" r="15.9"/>
+        <circle class="ring-mid" cx="18" cy="18" r="11.4"/>
+        <circle class="ring-core" cx="18" cy="18" r="6.6"/>
         <circle class="ring-fg" id="ring-fg" cx="18" cy="18" r="15.9"/>
       </svg>
       <span id="ring-label">0%</span>
@@ -38,6 +41,7 @@
       <span class="star">&#9733;</span><span id="points">0</span>
     </div>
     <span class="rank" id="rank-badge" title="Insight rank">Observer</span>
+    <button class="hud-btn" id="voice-btn" title="Answer by voice - tap to switch on or off (say an option or its number, then “next”)" aria-pressed="false" hidden>&#127908;</button>
     <button class="hud-btn" id="sound-btn" title="Narration on/off">&#128266;</button>
   </div>
   <div class="meta">
@@ -48,7 +52,6 @@
 
 <div class="progress-wrap" id="progress-wrap">
   <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
-  <div class="progress-label" id="progress-label"></div>
 </div>
 
 <main id="app">
@@ -87,6 +90,17 @@
       hypothetical profile created for research purposes. It is not an approved medicine and
       no treatment recommendation is being made.
     </div>
+    <fieldset class="audio-choice" id="audio-choice">
+      <legend>How would you like question audio?</legend>
+      <label><input type="radio" name="audio-pref" value="manual" checked> <span><b>Play only when I choose Listen</b><small>Recommended — nothing starts automatically</small></span></label>
+      <label><input type="radio" name="audio-pref" value="all"> <span><b>Read every question aloud</b><small>Audio starts after you begin the survey</small></span></label>
+      <label><input type="radio" name="audio-pref" value="off"> <span><b>No question audio</b><small>You can turn it on later</small></span></label>
+    </fieldset>
+    <fieldset class="audio-choice" id="voice-choice">
+      <legend>How would you like to answer?</legend>
+      <label><input type="radio" name="voice-pref" value="manual" checked> <span><b>Tap my answers</b><small>Classic mode &mdash; click or tap the options, use Next to move on</small></span></label>
+      <label><input type="radio" name="voice-pref" value="voice"> <span><b>Answer by voice &#127908;</b><small class="voice-note">Say an option name or its number, several with &ldquo;and&rdquo;, then &ldquo;next&rdquo;. Free: uses your browser&rsquo;s own speech recognition, no account needed</small></span></label>
+    </fieldset>
     <button class="btn primary big" id="start-btn">Begin survey &rarr;</button>
   </div>
 </main>
@@ -101,19 +115,6 @@
         onclick="if(window.__beaconDismiss){window.__beaconDismiss()}else if(window.__beaconEscape){window.__beaconEscape()}">&times;</button>
     </div>
     <div id="ex-mount"></div>
-  </div>
-</div>
-
-<!-- section milestone celebration -->
-<div class="celebrate" id="celebrate" hidden>
-  <div class="celebrate-inner">
-    <button class="cel-close" id="cel-close" type="button" title="Close"
-      onclick="if(window.__beaconDismiss){window.__beaconDismiss()}if(window.__beaconEscape){window.__beaconEscape()}">&times;</button>
-    <div class="celebrate-ico">&#10003;</div>
-    <h2 id="celebrate-title">Section complete</h2>
-    <p id="celebrate-sub"></p>
-    <div class="celebrate-pts" id="celebrate-pts"></div>
-    <button class="btn primary" id="celebrate-next" type="button">Continue</button>
   </div>
 </div>
 
@@ -134,6 +135,7 @@
   </div>
 </div>
 
+{% if is_test %}<aside class="test-console" id="test-console" hidden></aside>{% endif %}
 <footer class="foot">
   <span>PROJECT BEACON &middot; research instrument &middot; responses stored on the study server</span>
 </footer>
@@ -142,7 +144,7 @@
 /* Escape hatch that lives in the HTML itself, so a close button always works even if a
    cached or failing script never wires its own handler. */
 window.__beaconEscape = function () {
-  var ids = ["explainer", "celebrate"], i, n;
+  var ids = ["explainer"], i, n;
   for (i = 0; i < ids.length; i++) {
     n = document.getElementById(ids[i]);
     if (n) n.hidden = true;
@@ -151,9 +153,10 @@ window.__beaconEscape = function () {
   for (i = 0; i < av.length; i++) { try { av[i].pause(); } catch (e) {} }
 };
 </script>
-<script>window.STUDY={slug:{{ slug|tojson }}};</script>
-<script src="{{ url_for('static', filename='js/qlogic.js') }}?v=260921g"></script>
-<script src="{{ url_for('static', filename='js/explainer.js') }}?v=260921g"></script>
-<script src="{{ url_for('static', filename='js/survey.js') }}?v=260921g"></script>
+<script>window.STUDY={slug:{{ slug|tojson }},paused:{{ (is_paused|default(false))|tojson }}};</script>
+<script src="{{ url_for('static', filename='js/qlogic.js') }}?v=261006a"></script>
+<script src="{{ url_for('static', filename='js/voice.js') }}?v=261008b"></script>
+<script src="{{ url_for('static', filename='js/explainer.js') }}?v=261006a"></script>
+<script src="{{ url_for('static', filename='js/survey.js') }}?v=261008c"></script>
 </body>
 </html>

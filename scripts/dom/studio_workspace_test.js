@@ -32,7 +32,10 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   check("three-pane workspace renders", $("#st-outline") && $("#st-editor") && $("#st-previewpane"));
   check("outline lists both sections and all questions", $$(".st-sec").length===2 && $$(".st-qi").length===3);
   check("first question auto-selected and its editor shown", $(".st-qi.on .st-qi-id").textContent==="Q1" && $("#f-stem-rich").textContent==="Your specialty?");
-  check("editor is one scrolling form with cards (no tabs)", $$(".st-ecard").length===6 && !$("[data-edtab]"));
+  check("editor is one scrolling form of cards on the Content tab",
+    $$(".st-ecard").length===5 && !!$("#card-answers") && !!$("#card-display"));
+  check("the reference tabs are on the editor, not the top bar",
+    $$(".st-etab").length===4 && !$(".st-tab[data-tab=content]"));      // + Screening
   check("status segment + save state + autosave switch in bar", $(".st-status-btn.on.draft") && $("#st-savestate .st-ss.ok") && $("#st-autosave").checked);
   check("preview shows Q1", /Your specialty/.test($("#st-prev-body").textContent));
 
@@ -64,7 +67,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
   // --- options editor on Q2
   $$(".st-qi")[1].click(); await sleep(30);
-  check("answer options card lists 2 options with flags", $$('.st-items[data-kind=opt] .st-item:not(.st-item-head)').length===2 && $$(".st-flag").length===6);
+  check("answer options card lists 2 options with flags", $$('.st-items[data-kind=opt] .st-item:not(.st-item-head)').length===2 && $$(".st-flag").length===8);
   $("[data-act=opt-add-none]").click(); await sleep(20);
   const opts=$$('.st-items[data-kind=opt] .st-item:not(.st-item-head)');
   check("+ None of these adds exclusive pinned option 99", opts.length===3 && opts[2].querySelector("[data-k=code]").value==="99" && opts[2].querySelector(".st-flag.on"));
@@ -77,24 +80,86 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   $$("[data-act=set-layout]").find(b=>b.getAttribute("data-v")==="inline").click(); await sleep(20);
   check("layout segment applies", $("#st-prev-body .opts.opt-inline"));
 
+  // --- question editor tabs: Content & Settings / Conditional Display + PREVIEW
+  check("the editor offers the reference tab strip",
+    $$(".st-etab").length===4 && /Content & Settings/.test($$(".st-etab")[0].textContent) &&
+    /Show IF/.test($$(".st-etab")[1].textContent) &&
+    /Screening/.test($$(".st-etab")[2].textContent) && /PREVIEW/.test($$(".st-etab")[3].textContent),
+    $$(".st-etab").map(b=>b.textContent).join(" | "));
+  check("Content & Settings is the tab we land on", $$(".st-etab")[0].classList.contains("on") && !!$("#card-answers"));
+  check("the conditions live on the Show IF tab", !$("#card-logic"));
+  $$(".st-etab")[1].click(); await sleep(60);
+  check("switching tabs swaps the cards", $$(".st-etab")[1].classList.contains("on") && !!$("#card-logic") && !$("#card-answers"));
+  $$(".st-etab")[0].click(); await sleep(60);
+  check("and switching back restores the content cards", !!$("#card-answers") && !$("#card-logic"));
+
   // --- logic card: add a rule on Q2 referencing Q1
+  $$(".st-etab")[1].click(); await sleep(60);
   $("[data-act=rule-add]").click(); await sleep(30);
   check("condition row added with plain-English connector", $$("#f-rules .st-rule").length===1 && /when/.test($(".st-rule-no").textContent) && /Show this question/.test($(".st-logic-intro").textContent));
   check("logic badge in outline + card marker", /logic/.test($$(".st-qi")[1].textContent) && $("#card-logic .st-dot"));
+  $$(".st-etab")[1].click(); await sleep(60);            // re-render so the tab count is fresh
+  check("the Show IF tab shows how many rules are on",
+    ($$(".st-etab")[1].querySelector(".st-count")||{}).textContent==="1");
+  let sifSw=$("#f-sif-on");
+  check("Show IF has its own On / Off switch", !!sifSw && sifSw.checked);
+  sifSw.checked=false; fire(sifSw,"change"); await sleep(80);
+  check("switching it off drops the rule count off the tab",
+    !($$(".st-etab")[1].querySelector(".st-count")||{}).textContent &&
+    /switched off/.test($("#card-logic").textContent), ($$(".st-etab")[1]||{}).textContent);
+  sifSw=$("#f-sif-on"); sifSw.checked=true; fire(sifSw,"change"); await sleep(80);
+  check("switching it back on keeps the condition", $$("#f-rules .st-rule").length===1,
+    $$("#f-rules .st-rule").length);
   check("preview evaluates rule against sample answers", /SHOWN|HIDDEN/.test(($("#sif-result")||{}).textContent||""));
 
+  // --- the switch also works on a question with no conditions (it used to spring straight back on)
+  $$(".st-qi")[2].click(); await sleep(60);                        // Q3: no conditions yet
+  $$(".st-etab")[1].click(); await sleep(60);
+  check("a question with no conditions shows the switch on", !!$("#f-sif-on") && $("#f-sif-on").checked);
+  $("#f-sif-on").click(); await sleep(60);                          // a real click, not a synthetic change
+  check("switching it off with no conditions sticks", !!$("#f-sif-on") && !$("#f-sif-on").checked && /switched off/i.test($("#card-logic").textContent));
+  await sleep(1300);
+  check("the off switch is saved for that question", ((await saved()).questions[2].show_if||{}).off===true);
+  $("[data-act=rule-add]").click(); await sleep(60);
+  check("the first condition switches Show IF back on", !!$("#f-sif-on") && $("#f-sif-on").checked && $$("#f-rules .st-rule").length===1);
+  $("[data-act=rule-del]").click(); await sleep(1300);
+  check("removing that condition leaves the question as it was", (await saved()).questions[2].show_if===undefined);
+  $$(".st-qi")[1].click(); await sleep(60);                        // back on Q2, the question the rest of this test edits
+  // respondents: a switched-off condition is never applied; a switched-on one is
+  const sQ=[{id:"Q1",type:"single_select"}];
+  check("respondent logic applies a live condition", w.BeaconQ.showIf({show_if:{match:"all",rules:[{q:"Q1",op:"selected",value:"1"}]}},{answers:{Q1:{_:"2"}},questions:sQ})===false);
+  check("respondent logic ignores a switched-off condition", w.BeaconQ.showIf({show_if:{match:"all",rules:[{q:"Q1",op:"selected",value:"1"}],off:true}},{answers:{Q1:{_:"2"}},questions:sQ})===true);
+
   // --- change type via header select (Q2 multi -> single keeps options)
+  $$(".st-etab")[0].click(); await sleep(60);
+  check("the answer card is back after leaving Show IF", !!$("#card-answers"));
   const ty=$("#f-type"); ty.value="single_select"; fire(ty,"change"); await sleep(30);
-  check("type change keeps options & logic", $$('.st-items[data-kind=opt] .st-item:not(.st-item-head)').length===2 && $$("#f-rules .st-rule").length===1 && $(".st-qi.on .st-qi-ic").textContent==="\u25C9");
+  check("type change keeps options", $$('.st-items[data-kind=opt] .st-item:not(.st-item-head)').length===2 && $(".st-qi.on .st-qi-ic").textContent==="\u25C9");
+  $$(".st-etab")[1].click(); await sleep(60);
+  check("type change keeps the logic rule", $$("#f-rules .st-rule").length===1, $$("#f-rules .st-rule").length);
+  $$(".st-etab")[0].click(); await sleep(60);
 
   // --- add question via type picker
   $$("[data-act=qadd]")[1].click(); await sleep(20);
-  check("type picker modal opens as the grouped add-item library", !$("#st-modal").hidden && $$(".st-type").length===25 &&
-    /Multiple Choice/.test($("#st-modal").textContent) && /Methodologies/.test($("#st-modal").textContent) &&
+  check("type picker modal opens as the grouped add-item library", !$("#st-modal").hidden && $$(".st-type").length===26 &&
+    /Single Select/.test($("#st-modal").textContent) && /Methodologies/.test($("#st-modal").textContent) &&
     /Page Randomizer/.test($("#st-modal").textContent) && /Embedded Variable/.test($("#st-modal").textContent));
   $$(".st-type").find(b=>b.getAttribute("data-type")==="rating_grid").click(); await sleep(40);
   check("new rating grid inserted after selected question in Main, selected, next free id", $("#st-modal").hidden && $$(".st-qi").length===4 && $(".st-qi.on .st-qi-id").textContent==="Q10" && $$(".st-qi")[2].classList.contains("on"));
-  check("rows card with scale fields shown", $$('.st-items[data-kind=row] .st-item:not(.st-item-head)').length===2 && $("#f-smin"));
+  check("rows and columns cards with the select dropdown shown (no scale fields)",
+    $$('.st-items[data-kind=row] .st-item:not(.st-item-head)').length===2 &&
+    $$('.st-items[data-kind=col] .st-item:not(.st-item-head)').length===3 &&
+    $("#f-gselect") && !$("#f-smin"));
+
+  // --- the numeric matrix gets the same rows x columns editor
+  $$("[data-act=qadd]")[1].click(); await sleep(20);
+  $$(".st-type").find(b=>b.getAttribute("data-type")==="numeric_matrix").click(); await sleep(40);
+  check("a new numeric matrix opens as a rows x columns editor (no scale, no pick mode)",
+    $$('.st-items[data-kind=row] .st-item:not(.st-item-head)').length===2 &&
+    $$('.st-items[data-kind=col] .st-item:not(.st-item-head)').length===2 &&
+    !$("#f-gselect") && !$("#f-smin") && !!$("#f-nmin"),
+    $$('.st-items[data-kind=col] .st-item:not(.st-item-head)').length + " cols");
+  $(".st-qi.on [data-act=qdel]").click(); await sleep(30);   // drop it again
 
   // --- delete with undo
   $$("[data-act=qdel]").find(b=>b.closest(".st-qi-tools")).click(); await sleep(30);

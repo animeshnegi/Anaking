@@ -162,6 +162,124 @@ a{color:var(--accent2)}
 .st-addq{width:100%;border:0;border-top:1px dashed var(--line);background:#fff;color:var(--accent2);font-weight:700;font-size:12.5px;padding:8px;cursor:pointer;text-align:left;padding-left:14px}
 .st-addq:hover{background:var(--soft)}
 
+/* outline header: title, count, list / thumbnails switch and an always-reachable + Section */
+.st-outline-head{gap:8px;align-items:center}
+.st-viewseg{flex:0 0 auto}
+.st-outline-head>.st-ibtn{width:26px;height:26px;flex:0 0 auto;font-weight:800;color:var(--accent2);background:var(--soft2);border-color:var(--line)}
+.st-outline-head>.st-ibtn:hover{background:var(--soft)}
+
+/* rich-text toolbar controls added to match the reference editor */
+.st-tb-sel{border:1px solid var(--line);border-radius:7px;background:#fff;font:inherit;font-size:11.5px;
+  font-weight:600;color:var(--ink);padding:3px 4px;cursor:pointer;max-width:110px}
+.st-tb-extra{display:none;align-items:center;gap:2px}
+.st-toolbar.more-open .st-tb-extra{display:inline-flex}
+.st-rich.fs{position:fixed;top:16px;right:16px;bottom:16px;left:16px;z-index:60;background:#fff;
+  border:1px solid var(--line2);border-radius:12px;padding:18px 20px;overflow:auto;
+  box-shadow:0 18px 50px rgba(11,79,108,.28);font-size:16px;max-height:none}
+.st-src{width:100%;min-height:120px;border:1px solid var(--line);border-radius:9px;padding:9px 10px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.55;color:var(--ink)}
+.st-rich table,.st-tbl{border-collapse:collapse;margin:6px 0}
+.st-rich table td,.st-rich table th,.st-tbl td,.st-tbl th{border:1px solid var(--line2);padding:4px 8px;min-width:44px}
+.st-addmedia{display:block;margin:8px 0 2px;border:1px dashed var(--line2);background:#fff;color:var(--muted);
+  font:inherit;font-size:12px;font-weight:700;border-radius:9px;padding:7px 12px;cursor:pointer}
+.st-addmedia:hover{border-color:var(--accent2);color:var(--accent)}
+.st-addmedia.on{border-style:solid;border-color:var(--accent2);color:var(--accent);background:#f2f9fc}
+
+/* question editor tabs (Content & Settings / Conditional Display) and the PREVIEW button */
+.st-etabs{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--line);margin:2px 0 12px}
+.st-etab{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:700;color:var(--muted);
+  padding:8px 10px;border-bottom:2px solid transparent;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.st-etab:hover{color:var(--ink)}
+.st-etab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.st-etab.prev{margin-left:auto;border:1px solid var(--line);border-radius:8px;color:var(--ink);
+  padding:5px 12px;letter-spacing:.04em;font-size:11.5px;font-weight:800}
+.st-etab.prev:hover{border-color:var(--accent);color:var(--accent)}
+.st-etab-sp{flex:0}
+
+/* question title shown on the row, with the wording demoted to a second line */
+.st-qi-main.has-title .st-qi-stem{font-size:11.5px;color:var(--muted)}
+.st-qi-title{font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---- conjoint experiment (on the choice task question) ---- */
+.st-cj-attrs{display:flex;flex-direction:column;gap:10px}
+.st-cj-attr{border:1px solid var(--line);border-radius:10px;padding:9px 10px;background:#fff}
+.st-cj-attr:hover{border-color:var(--line2)}
+.st-cj-attr-head{display:grid;grid-template-columns:20px 26px minmax(0,1fr) auto;gap:8px;align-items:center}
+.st-cj-name{width:100%;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px;font-weight:600;min-width:0}
+.st-cj-attr-toggles{display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 2px;padding-left:46px}
+.st-cj-attr-toggles .st-switch{font-size:12px;font-weight:600}
+.st-cj-levels{display:flex;flex-direction:column;gap:5px;margin-top:6px;padding-left:46px}
+.st-cj-levels-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.st-cj-level{display:flex;gap:6px;align-items:center}
+.st-cj-level input{flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:12.5px}
+.st-cj-level .st-ibtn{width:24px;height:24px;font-size:11px}
+.st-cj-addlevel{border:0;background:transparent;color:var(--accent2);font-weight:700;font-size:12px;
+  text-align:left;padding:3px 0;cursor:pointer;width:max-content}
+.st-cj-addlevel:hover{text-decoration:underline}
+.st-cj-range{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:8px;padding-left:46px}
+.st-cj-range label{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.st-cj-range input{width:78px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;font-size:12.5px}
+/* conjoint tab: a read-only view of the design the study will field */
+.st-cj-attrs-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:2px}
+.st-cj-sum{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.st-cj-sum .st-cj-levels{padding-left:0}
+.st-cj-attr-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px}
+.st-cj-chip{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:2px 8px;
+  font-size:12px;background:#f8fafc;margin:2px 6px 0 0}
+.st-cj-setcard{display:inline-block;vertical-align:top;margin:0 10px 6px 0;border:1px solid var(--line);
+  border-radius:9px;padding:8px 10px;background:#fff;font-size:12.5px;min-width:190px}
+.st-info{color:var(--faint);font-size:12px;cursor:help;margin-left:3px}
+.st-cj .st-info{font-style:normal}
+
+/* ---- thumbnail view ---- */
+.st-tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:8px;padding:8px}
+.st-tcard{border:1px solid var(--line);border-radius:9px;background:#fff;padding:7px 8px 6px;cursor:pointer;
+  display:flex;flex-direction:column;gap:3px;min-width:0;position:relative;transition:border-color .1s,box-shadow .1s}
+.st-tcard:hover{border-color:var(--accent2);box-shadow:0 2px 8px rgba(11,79,108,.09)}
+.st-tcard.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent),0 2px 10px rgba(11,79,108,.14)}
+.st-tcard:focus-visible{outline:2px solid var(--accent2);outline-offset:1px}
+.st-tcard-top{display:flex;align-items:center;gap:5px}
+.st-tcard-ic{flex:0 0 20px;height:20px;border-radius:6px;background:var(--line2);color:var(--accent);display:grid;place-items:center;font-size:11px;font-weight:700}
+.st-tcard.on .st-tcard-ic{background:var(--accent);color:#fff}
+.st-tcard-id{font-size:11px;font-weight:800;color:var(--accent2);letter-spacing:.02em}
+.st-tcard-tools{margin-left:auto;display:none;gap:1px}
+.st-tcard:hover .st-tcard-tools,.st-tcard:focus-within .st-tcard-tools{display:inline-flex}
+.st-tcard-tools .st-ibtn{width:20px;height:20px;font-size:10px}
+.st-tcard-title{font-size:11.5px;font-weight:700;line-height:1.25;color:var(--ink);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.st-tcard-stem{font-size:10.5px;line-height:1.3;color:var(--muted);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.st-tcard-body{min-height:26px;margin-top:1px}
+.st-tcard-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;border-top:1px solid var(--line2);padding-top:4px}
+.st-tcard-foot .st-meta{margin-left:auto;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em}
+
+/* the schematic answer area inside a thumbnail */
+.st-tb-opts{display:flex;flex-direction:column;gap:3px}
+.st-tb-opt{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--ink);line-height:1.2;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-tb-opt i{flex:0 0 auto;width:9px;height:9px;border:1.2px solid #b9c6d1;background:#fff}
+.st-tb-radio{border-radius:50%}
+.st-tb-box{border-radius:2px}
+.st-tb-more{font-size:9.5px;color:var(--faint);font-style:italic}
+.st-tb-scale{display:flex;align-items:center;gap:4px}
+.st-tb-cells{display:flex;gap:2px;flex:1;min-width:0}
+.st-tb-cell{flex:1 1 0;height:13px;border:1px solid #cfdae3;border-radius:2px;background:linear-gradient(180deg,#fbfdfe,#eef4f8)}
+.st-tb-lab{font-size:9px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42%}
+.st-tb-rows{display:flex;flex-direction:column;gap:3px}
+.st-tb-row{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--ink)}
+.st-tb-row b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-tb-row i{flex:1 1 auto;height:9px;border:1px solid #cfdae3;border-radius:2px;background:#fbfdfe}
+.st-tb-text{display:flex;flex-direction:column;gap:3px;border:1px solid #dbe4eb;border-radius:3px;padding:4px 5px;background:#fcfdfe}
+.st-tb-text i{display:block;height:3px;border-radius:2px;background:#dfe8ee}
+.st-tb-text i.short{width:55%}
+.st-tb-num{display:flex;align-items:center;gap:4px}
+.st-tb-input{width:56px;height:16px;border:1px solid #cfdae3;border-radius:3px;background:#fff}
+.st-tb-input.wide{width:100%}
+.st-tb-pct{font-size:10px;color:var(--faint);border:1px solid #dbe4eb;border-radius:2px;padding:0 3px}
+.st-tb-cards{display:flex;gap:4px}
+.st-tb-cards i{flex:1 1 0;height:22px;border:1px solid #cfdae3;border-radius:3px;background:linear-gradient(180deg,#fbfdfe,#eef4f8)}
+
 .st-editor{overflow-y:auto;padding:0 24px 60px;background:var(--bg);position:relative}
 .st-editor-empty{max-width:420px;margin:80px auto;text-align:center;color:var(--muted)}
 .st-editor-empty-ic{font-size:44px;color:var(--faint);margin-bottom:8px}
@@ -169,7 +287,11 @@ a{color:var(--accent2)}
 .st-ehead{display:flex;gap:12px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin:18px 0 10px;box-shadow:var(--shadow)}
 .st-ehead-ic{flex:0 0 40px;height:40px;border-radius:10px;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:19px;font-weight:700}
 .st-ehead-main{flex:1;min-width:0}
-.st-ehead-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.st-ehead-row{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+/* ID with the question Title stacked underneath it */
+.st-ehead-idcol{display:flex;flex-direction:column;gap:6px}
+#f-title{width:236px;font-family:inherit;font-weight:600}
+@media (max-width:1180px){#f-title{width:170px}}
 .st-mini{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .st-mini input,.st-mini select{font-size:13px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:5px 8px;background:#fff}
 .st-mini input{width:76px;font-family:ui-monospace,Menlo,monospace}
@@ -224,24 +346,39 @@ a{color:var(--accent2)}
 
 /* item lists (options / rows / columns) */
 .st-items{display:flex;flex-direction:column;gap:4px}
-.st-item{display:grid;grid-template-columns:14px 58px minmax(160px,1fr) auto auto;gap:6px;align-items:center;padding:4px 6px;border-radius:8px;background:#fff;border:1px solid transparent}
-.st-items[data-kind=row] .st-item.has-poles,.st-item:has(input[data-k=left]){grid-template-columns:14px 58px minmax(140px,1fr) minmax(90px,.6fr) minmax(90px,.6fr) auto auto}
+/* one row = grip | position | code | label | [poles] | tools, with the behaviour chips on their
+   own line underneath.  The label track is minmax(0,1fr) on purpose: the row can always shrink
+   to the pane, so the delete / reorder buttons can never be pushed out of view. */
+.st-item{display:grid;grid-template-columns:20px 26px 58px minmax(0,1fr) auto;gap:6px 8px;align-items:center;padding:5px 6px;border-radius:8px;background:#fff;border:1px solid transparent}
+.st-items.has-poles .st-item,.st-item:has(input[data-k=left]){grid-template-columns:20px 26px 58px minmax(0,1fr) minmax(56px,.6fr) minmax(56px,.6fr) auto}
 .st-item:hover{border-color:var(--line);background:var(--soft2)}
-.st-item-head{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);padding:0 6px 2px}
+.st-item-head{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);padding:0 6px 2px;pointer-events:none}
 .st-item-head:hover{border-color:transparent;background:transparent}
-.st-grip{color:#c4cfd8;font-size:11px;letter-spacing:-3px;user-select:none}
+.st-item-head>span:last-child{text-align:right}
+.st-grip{color:#c4cfd8;font-size:14px;line-height:1;text-align:center;cursor:grab;user-select:none;border-radius:5px;padding:2px 0}
+.st-grip:hover{color:var(--accent);background:var(--soft)}
+.st-grip:active{cursor:grabbing}
+.st-grip:focus-visible{outline:2px solid var(--accent2);outline-offset:1px}
+.st-seq{font-size:12px;font-weight:700;color:var(--faint);text-align:center;user-select:none;font-variant-numeric:tabular-nums}
 .st-item input:not([type=checkbox]){width:100%;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px;background:#fff;min-width:0}
 .st-it-code{font-family:ui-monospace,Menlo,monospace;font-size:12px !important;text-align:center}
 .st-with-pipe{display:flex;gap:6px;align-items:center;min-width:0}
 .st-with-pipe input{flex:1}
-.st-flags{display:inline-flex;gap:4px}
+.st-flags{grid-column:4/-1;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.st-flags-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-right:3px}
 .st-flag{font-size:11px;font-weight:700;color:var(--faint);border:1px solid var(--line);border-radius:999px;padding:3px 8px;cursor:pointer;white-space:nowrap;background:#fff;user-select:none}
 .st-flag input{position:absolute;opacity:0;width:0;height:0}
 .st-flag:hover{border-color:var(--accent2);color:var(--accent)}
 .st-flag.on{background:var(--soft);border-color:var(--accent2);color:var(--accent)}
-.st-item-tools{display:inline-flex;gap:1px;opacity:.55}
+.st-item-tools{display:inline-flex;gap:1px;align-items:center;opacity:.9}
 .st-item:hover .st-item-tools,.st-item:focus-within .st-item-tools{opacity:1}
 .st-item-tools .st-ibtn{width:24px;height:24px;font-size:11px}
+.st-item-tools .st-ibtn.danger{color:var(--bad);opacity:.7}
+.st-item-tools .st-ibtn.danger:hover{opacity:1}
+.st-ibtn:disabled{opacity:.22;pointer-events:none}
+.st-item.dragging{opacity:.45;border-color:var(--accent2);background:var(--soft)}
+.st-item.drop-before{box-shadow:inset 0 3px 0 -1px var(--accent2)}
+.st-items.drop-end::after{content:"";display:block;height:3px;border-radius:2px;background:var(--accent2);margin-top:2px}
 .st-item-tools label.st-ibtn{cursor:pointer}
 .st-thumb{position:relative;display:inline-block;width:30px;height:24px;margin-right:2px}
 .st-thumb img{width:30px;height:24px;object-fit:cover;border-radius:5px;border:1px solid var(--line)}
@@ -252,6 +389,7 @@ a{color:var(--accent2)}
 .st-pipe-btn{border:1px solid #cfe2ea;background:var(--soft);color:var(--accent);border-radius:999px;padding:4px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;margin-left:auto}
 .st-pipe-btn:hover{background:var(--accent);color:#fff}
 .st-pipe-btn.sm{padding:3px 8px;font-size:11px;margin-left:0}
+.st-pipe-btn.icon{flex:0 0 auto;padding:3px 7px;font-size:13px;line-height:1.1}
 .st-pipe-pop{position:sticky;top:44px;z-index:6;border:2px solid var(--accent2);border-radius:12px;background:#fff;padding:12px 14px;margin:0 0 12px;box-shadow:0 12px 40px rgba(11,79,108,.22);max-height:60vh;overflow-y:auto}
 .st-pipe-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
 .st-pipe-head .ex-close{margin-left:auto;background:none;border:0;font-size:22px;cursor:pointer;color:var(--muted);width:auto;height:auto}
@@ -268,6 +406,51 @@ a{color:var(--accent2)}
 
 /* randomise radios */
 .st-radio-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;margin-top:4px}
+/* On / Off switch at the top of the Screening and Show IF tabs */
+.st-switch.big{font-size:13.5px}
+.st-switch.big i{width:40px;height:22px}
+.st-switch.big i::after{width:18px;height:18px}
+.st-switch.big input:checked+i::after{left:20px}
+.st-scr-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:2px 0 10px;
+  border-bottom:1px solid var(--line2);margin-bottom:12px}
+.st-scr-top .st-meta{font-size:11.5px}
+.st-scr-off{background:var(--soft2);border:1px dashed var(--line);border-radius:9px;padding:10px 12px;
+  font-size:12px;color:var(--muted)}
+/* "Respondents will [Screen In | Screen Out] if the answer criteria is met." */
+.st-scr-lead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px;color:var(--ink);margin:0 0 12px}
+.st-scr-lead b{font-weight:600}
+.st-seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+.st-seg-btn{position:relative;padding:6px 14px;font-size:12.5px;font-weight:700;cursor:pointer;
+  border-right:1px solid var(--line);color:var(--muted);white-space:nowrap;transition:background .12s,color .12s}
+.st-seg-btn:last-child{border-right:0}
+.st-seg-btn input{position:absolute;opacity:0;width:0;height:0}
+.st-seg-btn.on{background:var(--ink);color:#fff}
+.st-seg-btn:hover:not(.on){background:var(--soft)}
+.st-seg-btn input:focus-visible+.st-seg-btn{outline:2px solid var(--accent2)}
+/* screener blocks: type, which answers, the bands, the sum */
+.st-scr-block{margin:0 0 14px}
+.st-scr-blockhead{font-size:12px;font-weight:800;letter-spacing:.02em;color:var(--muted);
+  text-transform:uppercase;margin:0 0 6px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.st-scr-blockhead .st-scr-inline,.st-scr-inline{font-size:11.5px;font-weight:500;text-transform:none;letter-spacing:0}
+.st-scr-inline select{border:1px solid var(--line);border-radius:6px;padding:2px 4px;font-size:11.5px;background:#fff}
+.st-scr-minmax{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line2);flex-wrap:wrap}
+.st-scr-minmax:first-of-type{border-top:0}
+.st-scr-mm-label{flex:1 1 200px;min-width:140px;font-size:12.5px;font-weight:600}
+.st-scr-minmax .st-mini{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--muted)}
+.st-scr-sumrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.st-scr-sumrow select{border:1px solid var(--line);border-radius:7px;padding:5px 6px;font-size:12.5px;background:#fff}
+.st-scr-empty{font-size:12px;color:var(--faint);background:var(--soft2);border:1px dashed var(--line);
+  border-radius:9px;padding:10px 12px}
+/* the dropdown of every answer, and the one on each band */
+.st-scr-addrow,.st-scr-minmax select{border:1px solid var(--line);border-radius:7px;padding:5px 6px;
+  font-size:12.5px;background:#fff;max-width:260px}
+.st-scr-minmax select{flex:1 1 180px;min-width:120px;font-weight:600}
+.st-scr-addrow{max-width:300px}
+.st-scr-combine{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin:0 0 8px}
+.st-scr-combine select{border:1px solid var(--line);border-radius:7px;padding:3px 5px;font-size:12px;background:#fff}
+.st-scr-more{margin:0 0 12px;border:1px solid var(--line2);border-radius:9px;background:var(--soft2)}
+.st-scr-more>summary{cursor:pointer;padding:7px 12px;font-size:12px;font-weight:700;color:var(--muted)}
+.st-scr-more>div{padding:0 12px 10px}
 .st-radio{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:12.5px;font-weight:700;cursor:pointer;background:#fff;display:flex;flex-direction:column;gap:2px}
 .st-radio small{font-weight:500;color:var(--muted);font-size:11px}
 .st-radio.on{border-color:var(--accent2);background:var(--soft)}
@@ -417,3 +600,127 @@ table.st-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .st-kid-lang b{font-size:13px}
 .st-kid-lang small{display:block;color:var(--muted);font-size:11px}
 .st-kid-tools{display:flex;gap:6px}
+
+/* ---------- launch / pause / reminders (dashboard cards) ---------- */
+.st-pill.paused{background:#eef0ff;color:#4353b8;border:1px solid #ccd2f2}
+.st-status-btn.on.paused{background:#eef0ff;color:#4353b8}
+.st-card-actions .st-btn.st-act-preview,.st-card-actions .st-btn.st-act-dup,
+.st-card-actions .st-btn.st-act-launch,.st-card-actions .st-btn.st-act-pause,
+.st-card-actions .st-btn.st-act-remind{display:inline-flex;align-items:center;gap:5px}
+.st-act-preview{color:var(--accent)}
+.st-act-dup{color:#5b4bd6;border-color:#d9d4f5}
+.st-act-dup:hover{background:#f3f1fd;border-color:#c9c2ef}
+.st-act-launch{background:var(--good);color:#fff;border-color:var(--good)}
+.st-act-launch:hover{filter:brightness(1.08)}
+.st-act-pause{color:var(--warn);border-color:#ecd6a8}
+.st-act-pause:hover{background:#fff4e2}
+.st-act-remind{color:var(--accent2);border-color:var(--line)}
+.st-act-remind:hover{background:var(--soft)}
+.st-invites{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+.st-invites .bad{color:var(--bad);font-weight:700}
+.st-link{border:0;background:transparent;padding:0;font:inherit;color:var(--accent2);font-weight:700;cursor:pointer;text-decoration:underline}
+.st-link:hover{color:var(--accent)}
+
+/* ---------- launch & invite-log modals ---------- */
+.st-field>span{display:block;font-size:11.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.st-copyrow{display:flex;gap:8px;align-items:center}
+.st-copyrow input{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12.5px;background:var(--soft2)}
+.st-launch-modal .st-field,.st-outbox-modal .st-field{margin-bottom:14px}
+.st-outbox{max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+.st-tbl-out{width:100%;border-collapse:collapse;font-size:12.5px}
+.st-tbl-out th{position:sticky;top:0;background:var(--soft2);text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line)}
+.st-tbl-out td{padding:8px 10px;border-bottom:1px solid var(--line2);vertical-align:middle}
+.st-tbl-out tr:last-child td{border-bottom:0}
+.st-tbl-out small{color:var(--muted);font-weight:500}
+.st-tbl-out td.failed{color:var(--bad)}
+.st-tbl-out td.sent{color:var(--good)}
+.st-tbl-out td.queued{color:var(--warn)}
+.st-tbl-out .st-link-in{width:100%;min-width:180px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;font-size:11.5px;background:var(--soft2)}
+.st-tbl-out .st-link-in:focus{outline:none;border-color:var(--accent2);box-shadow:0 0 0 3px rgba(18,120,158,.15)}
+.st-modal-box.st-outbox-modal{width:min(1040px,100%)}
+.st-modal-box.st-launch-modal{width:min(720px,100%)}
+
+/* ---------- screening (screen in / screen out) ---------- */
+.st-badge.screen{background:#ffd9d4;color:#8c1d16}
+.st-count.warn{background:#ffd9d4;color:#8c1d16}
+.st-scr-modes{margin:12px 0 4px}
+.st-scr-modes .st-radio.on{border-color:#e08b82;background:#fff6f5}
+.st-scr-rules{margin-top:4px}
+.st-rule .st-scr-chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 4px 52px}
+.st-scr-chips{display:flex;flex-wrap:wrap;gap:5px}
+.st-scr-chips .st-chip{border:1px dashed var(--line);background:#fff;color:var(--muted);border-radius:999px;
+  padding:4px 11px;font-size:12px;font-weight:600;cursor:pointer;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-scr-chips .st-chip:hover{border-color:var(--accent2);color:var(--accent)}
+.st-scr-chips .st-chip.on{border-style:solid;border-color:#d9857c;background:#fff1ef;color:#8c1d16}
+.st-scr-chips .st-chip.sm{padding:2px 9px;font-size:11.5px}
+.st-rule .st-scr-pair{display:flex;gap:5px;align-items:center;min-width:0}
+.st-rule .st-scr-pair em{font-size:11px;color:var(--faint);font-style:normal}
+.st-rule .st-scr-pair select,.st-rule .st-scr-pair input{border:1px solid var(--line);border-radius:7px;padding:6px 7px;font-size:12.5px;background:#fff;min-width:0}
+.st-rule .st-scr-num{width:100%}
+.st-scr-plain{margin:10px 0 2px;border:1px solid var(--line2);border-radius:10px;background:var(--soft2);overflow:hidden}
+.st-scr-linerow{display:flex;gap:9px;align-items:baseline;padding:8px 12px;font-size:12.5px;border-top:1px solid var(--line2)}
+.st-scr-linerow:first-child{border-top:0}
+.st-scr-linerow i{font-style:normal;font-size:13px;line-height:1}
+.st-scr-linerow.screen_out i{color:var(--bad)}
+.st-scr-linerow.qualify i{color:var(--good)}
+.st-scr-linerow span{flex:1}
+.st-scr-linerow span b{font-weight:800}
+.st-scr-linerow em{font-style:normal;font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em}
+.st-scr-linerow u{text-decoration:none;font-size:10.5px;color:var(--muted);background:var(--amber);border-radius:4px;padding:1px 5px}
+/* the same sentence, on the question itself, on every tab */
+.st-scr-linebar{display:flex;align-items:center;gap:10px;margin:10px 0 0;border:1px solid #f2dcb3;background:#fff8ec;
+  border-radius:10px;padding:2px 10px 2px 0;overflow:hidden}
+.st-scr-linebar>div{flex:1;min-width:0}
+.st-scr-linebar .st-scr-linerow{border-top:0;padding:7px 12px;background:transparent;color:#5f4b1f}
+.st-scr-linebar .st-scr-linerow em{color:#a07a2c}
+.st-scr-linebar .st-btn{margin-right:2px}
+/* number boxes carry the question's range and unit */
+.st-scr-numwrap{display:inline-flex;align-items:center;gap:5px;min-width:0}
+.st-scr-numwrap .st-scr-num{width:92px}
+.st-scr-unit{font-style:normal;font-size:11px;color:var(--muted);white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.st-scr-rownum{width:88px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;font-size:12.5px;background:#fff}
+.st-scr-row .st-scr-cell{min-width:0;flex:0 0 auto;display:inline-flex;flex-direction:column;gap:2px;align-items:stretch}
+.st-scr-cell i{font-style:normal;font-size:10.5px;color:var(--muted);text-align:center}
+.st-scr-cell .st-scr-rownum{width:80px}
+.st-scr-cellnum{width:90px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;font-size:12.5px;background:#fff}
+.st-scr-total{font-size:11.5px;color:var(--muted);padding:4px 0 0}
+.st-scr-total b{color:var(--ink);font-size:13px}
+/* the tester: pick an answer by hand and read the verdict */
+.st-scr-test{margin-top:14px;border:1px solid var(--line);border-radius:11px;background:#fff;overflow:hidden}
+.st-scr-test-head{display:flex;align-items:center;gap:9px;background:var(--soft2);border-bottom:1px solid var(--line2);padding:8px 12px}
+.st-scr-test-head b{font-size:12.5px}
+.st-scr-test-head .st-btn{margin-left:auto}
+.st-scr-test .st-scr-chips{padding:11px 12px 4px}
+.st-scr-rows{padding:10px 12px 2px;display:flex;flex-direction:column;gap:7px}
+.st-scr-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.st-scr-row span{font-size:12.5px;min-width:160px;flex:1}
+.st-scr-pickrow{display:flex;gap:9px;align-items:center;padding:11px 12px 2px}
+.st-scr-pickrow input{border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px;width:140px}
+.st-scr-verdict{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-top:1px solid var(--line2);margin-top:8px}
+.st-scr-verdict b{font-size:12px;letter-spacing:.06em}
+.st-scr-verdict span{font-size:12.5px}
+.st-scr-verdict em{font-style:normal;font-size:11.5px;color:var(--muted)}
+.st-scr-verdict.out{background:#fff1ef}
+.st-scr-verdict.out b{color:#8c1d16}
+.st-scr-verdict.pass{background:#f0faf4}
+.st-scr-verdict.pass b{color:var(--good)}
+.st-note.warn{background:#fff8ec;border-color:#f2dcb3;color:#7a4c00}
+
+/* ---- matrix / grid questions -------------------------------------------------------
+   The scale points are a table of their own (position | value | label | format | media |
+   tools), and the N/A + comment + order settings sit in their own boxes under the rows. */
+.st-h4-n{font-weight:700;font-size:11px;letter-spacing:0;text-transform:none;color:var(--faint)}
+.st-pts .st-item{grid-template-columns:26px 44px minmax(0,1fr) 88px 38px auto}
+.st-pt-val{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;text-align:center;color:var(--muted)}
+.st-it-fmt,.st-pts select{border:1px solid var(--line);border-radius:6px;padding:3px 4px;font-size:11px;
+  background:#fff;max-width:100%}
+.st-thumb-ic{display:inline-flex;align-items:center;justify-content:center;width:30px;height:24px;
+  border:1px solid var(--line);border-radius:5px;background:var(--soft2);font-size:13px}
+.st-flag-sel{display:inline-flex;gap:4px;align-items:center;padding:2px 7px}
+.st-flag-sel select{border:0;background:transparent;font:inherit;font-size:11px;font-weight:700;
+  color:inherit;max-width:118px;padding:0}
+.st-mtx-na,.st-mtx-comments{border:1px solid var(--line2);border-radius:9px;background:var(--soft2);
+  padding:10px 12px;margin:10px 0}
+.st-mtx-na{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+.st-mtx-na .st-meta{flex:1 1 260px}
+.st-narrow{max-width:130px}

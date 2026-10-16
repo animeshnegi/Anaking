@@ -14,7 +14,8 @@ from html import escape
 from html.parser import HTMLParser
 
 ALLOWED_TAGS = {"b", "strong", "i", "em", "u", "s", "span", "mark", "sup", "sub", "br",
-                "p", "div", "ul", "ol", "li", "a", "font"}
+                "p", "div", "ul", "ol", "li", "a", "font",
+                "table", "thead", "tbody", "tr", "td", "th"}
 VOID_TAGS = {"br"}
 ALLOWED_STYLE = {"color", "background-color", "font-family", "font-size", "font-weight",
                  "font-style", "text-decoration", "text-align"}

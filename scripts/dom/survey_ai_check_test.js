@@ -195,6 +195,9 @@ async function answer(S, text, pasted) {
         queue.rows.length === 1 && queue.rows[0].verdict === "human" &&
         queue.rows[0].score < 35, JSON.stringify(queue.rows.map(r => [r.verdict, r.score])));
 
+  await req("POST", "/api/studio/delete", JSON.stringify({ slug: confirmSlug }));   // leave the DB as we found it
+  await req("POST", "/api/studio/delete", JSON.stringify({ slug: warnSlug }));
+
   console.log(fails ? "\n" + fails + " check(s) FAILED" : "\nall checks passed");
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error("ERROR", e); process.exit(1); });

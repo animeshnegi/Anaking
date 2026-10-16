@@ -6,8 +6,8 @@
 }
 *{box-sizing:border-box}
 /* The instrument shows/hides layers via the hidden attribute; without this rule the
-   display:grid on .overlay/.celebrate would override hidden and the modals would
-   sit on screen permanently. */
+   display:grid on .overlay would override hidden and the overlay would sit on screen
+   permanently. */
 [hidden]{display:none !important}
 body{
   margin:0; background:var(--bg); color:var(--ink);
@@ -31,11 +31,25 @@ body{
 .brand-text span{font-size:12px;opacity:.82}
 .meta{display:flex;gap:14px;font-size:12px;opacity:.85;white-space:nowrap}
 
+/* While a question is on screen the respondent sees the question first.  survey.js puts .answering on
+   <body> for exactly as long as a question (or the pre-submit quality check) is up.  The project
+   details (brand, study, respondent code, timer) and the progress line are hidden then.  When the
+   author keeps the gamified feel on (body.gamified), a slim strip stays on top with the progress ring,
+   insight points, rank and the voice and sound buttons, so the reward is visible while answering. */
+body.answering .topbar,
+body.answering .progress-wrap{display:none}
+body.answering.gamified .topbar{display:flex;justify-content:center;padding:6px 20px}
+body.answering.gamified .topbar .brand,
+body.answering.gamified .topbar .meta{display:none}
+/* the test-mode reminder sticks below the project bar - with that bar gone it moves to the top.
+   It must not sit lower: the team bar above it is not sticky, so a lower offset would cover it */
+body.answering.testmode::before{top:0}
+
 /* ---------- progress ---------- */
 .progress-wrap{padding:14px 20px 0;max-width:860px;margin:0 auto}
 .progress-track{height:5px;background:#e2e9ee;border-radius:99px;overflow:hidden}
 .progress-fill{height:100%;width:0;background:var(--accent-2);border-radius:99px;transition:width .25s ease}
-.progress-label{font-size:12px;color:var(--muted);margin-top:6px;display:flex;justify-content:space-between}
+
 
 /* ---------- layout ---------- */
 main{max-width:860px;margin:0 auto;padding:16px 20px 90px}
@@ -102,6 +116,11 @@ h3{font-size:15px;margin:0 0 10px;color:var(--accent)}
 .scale button.on{background:var(--accent-2);border-color:var(--accent-2);color:#fff;font-weight:600}
 .scale-ends{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);
   padding:7px 14px;background:#f4f7f9;border-top:1px solid var(--line)}
+/* rating scale: three anchor labels - low end, middle, high end */
+.scale-ends.rs-ends{position:relative}
+.rs-end-low{text-align:left;max-width:30%}
+.rs-end-high{text-align:right;max-width:30%;margin-left:auto}
+.rs-end-mid{position:absolute;left:50%;transform:translateX(-50%);text-align:center;max-width:36%}
 .sem-left,.sem-right{font-size:11.5px;color:var(--muted);white-space:nowrap}
 
 /* ---------- inputs ---------- */
@@ -259,12 +278,18 @@ body.testmode::before{
 .hud-item.pts{font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums}
 .hud-item.pts .star{color:#ffd166;font-size:15px}
 .hud-item.pts.bump{animation:bump .5s cubic-bezier(.34,1.56,.64,1)}
+.hud-item.pts{position:relative}
+.pts-float{position:absolute;left:50%;top:100%;margin-top:1px;transform:translateX(-50%);
+  font-size:12px;font-weight:800;color:#ffd166;white-space:nowrap;pointer-events:none;
+  animation:pts-rise 1.4s ease-out forwards}
+@keyframes pts-rise{0%{opacity:0;transform:translate(-50%,2px)}18%{opacity:1}100%{opacity:0;transform:translate(-50%,-16px)}}
 @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
 .hud-btn{background:rgba(255,255,255,.14);border:none;color:#fff;width:30px;height:30px;
   border-radius:7px;cursor:pointer;font-size:14px;line-height:1}
 .hud-btn:hover{background:rgba(255,255,255,.26)}
 .hud-btn.off{opacity:.45}
-@media (max-width:720px){.meta{display:none}}
+/* phones: the study name steps aside so the gamified strip (ring, points, rank, mic, sound) fits */
+@media (max-width:720px){.meta{display:none}.brand-text{display:none}}
 
 /* ================= welcome hero + audio ================= */
 .welcome-hero{text-align:center;padding:6px 0 4px}
@@ -273,6 +298,18 @@ body.testmode::before{
 .welcome-hero h1{margin-bottom:8px}
 .welcome-hero p{font-size:14.5px;color:var(--muted);max-width:520px;margin:0 auto}
 .btn.big{padding:14px 30px;font-size:15px;width:100%}
+
+/* welcome: audio + answer-mode choices. A disabled option (no speech recognition in this browser)
+   stays visible and says why. */
+.audio-choice{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:18px 0;background:#f8fafb}
+.audio-choice legend{font-weight:800;padding:0 6px}
+.audio-choice label{display:flex;gap:9px;align-items:flex-start;padding:8px;border-radius:8px;cursor:pointer}
+.audio-choice label:hover{background:#e8f2f7}
+.audio-choice label.is-off{opacity:.55;cursor:not-allowed}
+.audio-choice label.is-off:hover{background:none}
+.audio-choice input{margin-top:4px;accent-color:var(--accent-2)}
+.audio-choice span,.audio-choice small{display:block}
+.audio-choice small{color:var(--muted);margin-top:2px}
 
 .audio-card{background:#f8fafb;border:1px solid var(--line);border-radius:10px;padding:13px;
   margin-bottom:18px}
@@ -294,18 +331,9 @@ body.testmode::before{
 .play-wave i:nth-child(7){animation-delay:.72s}
 @keyframes wave{0%,100%{height:18%}50%{height:100%}}
 
-/* ================= celebration ================= */
-.celebrate{position:fixed;inset:0;background:rgba(12,24,34,.66);z-index:55;display:grid;
-  place-items:center;padding:18px;animation:fadeIn .22s ease}
-.celebrate-inner{position:relative;background:#fff;border-radius:14px;padding:30px 34px;max-width:420px;width:100%;
-  text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:riseIn .4s cubic-bezier(.16,1,.3,1)}
-.celebrate-ico{width:58px;height:58px;border-radius:50%;background:var(--good);color:#fff;
-  display:grid;place-items:center;font-size:27px;margin:0 auto 14px;
-  animation:aPop .5s cubic-bezier(.34,1.56,.64,1) both}
-.celebrate-inner h2{font-size:20px;margin:0 0 6px}
-.celebrate-inner p{font-size:13.5px;color:var(--muted);margin:0 0 14px}
-.celebrate-pts{font-size:15px;font-weight:700;color:var(--accent);background:var(--accent-soft);
-  border-radius:9px;padding:10px;margin-bottom:18px}
+/* ================= confetti ================= */
+/* the between-section celebration overlay was removed - sections now run straight into each
+   other.  Confetti is still thrown on the closing screen and on a rank-up. */
 .confetti{position:fixed;width:9px;height:14px;top:-20px;z-index:56;pointer-events:none;
   animation:fall linear forwards}
 @keyframes fall{to{transform:translateY(105vh) rotate(720deg);opacity:.2}}
@@ -434,6 +462,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 .coach-msg{font-size:12.5px;color:var(--ink);line-height:1.45}
 .coach-msg a{color:var(--accent);font-weight:800;text-decoration:underline}
+@media (max-width:640px){body.voice-on .coach{bottom:76px}}
 
 .oq-chip{display:none;margin-top:8px;font-size:12px;font-weight:600;border-radius:8px;padding:7px 11px}
 .oq-chip.warn{display:block;background:#fff4e2;color:#b26a00;border:1px solid #ecd6a8;animation:capIn .3s ease}
@@ -539,6 +568,10 @@ h2.stem ul,h2.stem ol,.help ul,.help ol{margin:8px 0 4px;padding-left:22px;font-
 h2.stem li,.help li{margin:2px 0}
 h2.stem p,.help p{margin:0 0 6px}
 h2.stem mark,.help mark,.opt mark{padding:0 3px;border-radius:3px}
+/* tables an author inserts with the rich-text toolbar */
+h2.stem table,.help table{border-collapse:collapse;margin:8px 0;font-size:13.5px;font-weight:500}
+h2.stem table td,h2.stem table th,.help table td,.help table th{border:1px solid var(--line);
+  padding:5px 10px;text-align:left}
 .qmedia{margin:6px 0 16px}
 .qmedia img,.qmedia video{max-width:100%;border-radius:10px;border:1px solid var(--line);display:block}
 .qmedia-center img,.qmedia-center video{margin:0 auto}
@@ -601,3 +634,148 @@ h2.stem mark,.help mark,.opt mark{padding:0 3px;border-radius:3px}
   background:#fff;border-radius:999px;padding:4px 12px;font:inherit;font-size:12px;font-weight:700;
   color:var(--accent);cursor:pointer}
 .i18n-chip:hover{border-color:var(--accent)}
+
+/* ---------- grids: title, column captions, N/A, comments, heat map, emoji grid ---------- */
+.grid-title{font-size:14px;font-weight:700;margin:0 0 8px}
+.grid-head{background:#f4f7f9;border-bottom:1px solid var(--line)}
+.grid-head .grid-rowname,.grid-colname{font-size:11px;font-weight:800;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted)}
+.grid-colname{text-align:center;margin-bottom:2px}
+.grid-cells{display:flex;flex-direction:column;gap:2px;min-width:0}
+.grid-plabels{display:flex;justify-content:space-between;gap:6px}
+.grid-plabel{font-size:10.5px;color:var(--muted);text-align:center;line-height:1.25;max-width:110px;
+  display:flex;flex-direction:column;align-items:center;gap:2px}
+/* choice grid: rows x columns, one or several picks per row */
+.choice-grid{overflow-x:auto}
+.cg-row{display:grid;grid-template-columns:var(--cg-tmpl);gap:8px;align-items:center;
+  padding:10px 14px;border-bottom:1px solid var(--line)}
+.cg-row:last-child{border-bottom:none}
+.cg-row:nth-child(even){background:#fafcfd}
+.cg-head{background:#f4f7f9;border-bottom:1px solid var(--line)}
+.cg-head .cg-col{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--muted);text-align:center}
+.cg-corner{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.cg-rlabel{font-size:13.5px}
+.cg-cell{display:flex;justify-content:center;align-items:center;margin:0;cursor:pointer}
+.cg-cell input{width:19px;height:19px;accent-color:var(--accent-2);cursor:pointer}
+.cg-na .na-cell{justify-content:center}
+.grid-plabel-na{font-weight:700;color:var(--ink)}
+.grid-nacell{display:inline-flex;align-items:center;margin-left:10px}
+.na-cell{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;
+  color:var(--muted);white-space:nowrap;cursor:pointer;user-select:none}
+.na-cell input{width:15px;height:15px;accent-color:#8c1d16}
+.na-cell:hover{color:var(--ink)}
+.sp-labels{position:relative;height:15px;margin:1px 12px 0}
+.sp-label{position:absolute;top:0;transform:translateX(-50%);display:flex;flex-direction:column;
+  align-items:center;font-size:10px;color:var(--muted);white-space:nowrap}
+.qmedia-sm{max-width:150px;margin-top:4px}
+.qmedia-xs{max-width:64px;margin:2px 0 0}
+.qmedia-sm img,.qmedia-xs img{width:100%;border-radius:6px}
+.qmedia-sm audio,.qmedia-xs audio{width:100%}
+.grid-cmtrow{border-bottom:1px solid var(--line);background:#fcfdfe;padding:8px 14px}
+.cmt-box{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);
+  border-radius:8px;background:#fff;resize:vertical}
+.cmt-box.req{border-color:#d9857c;background:#fffaf9}
+.q-comment{margin-top:12px}
+.q-comment-lbl{display:block;font-size:12.5px;font-weight:700;margin-bottom:5px}
+/* emoji grid */
+.emoji-cells{flex-direction:row;gap:8px;flex-wrap:wrap}
+.emoji-btn{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;
+  border:1px solid var(--line);background:#fff;border-radius:10px;cursor:pointer;min-width:46px}
+.emoji-btn:hover{border-color:var(--accent2);background:#f7fbfd}
+.emoji-face{font-size:22px;line-height:1.1}
+.emoji-btn.on{border-color:#12789e;background:#eaf6fb;box-shadow:0 0 0 2px rgba(18,120,158,.18)}
+/* heat map */
+.heatmap{margin-top:12px}
+.hm-table{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.hm-tr{display:grid;grid-template-columns:var(--hm-cols);align-items:stretch}
+.hm-tr+.hm-tr{border-top:1px solid var(--line)}
+.hm-head{background:#f4f7f9;font-size:11px;font-weight:800;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted)}
+.hm-th{padding:9px 10px;display:flex;flex-direction:column;justify-content:center;text-align:center;
+  font-size:12px;text-transform:none;letter-spacing:0;color:var(--ink);font-weight:600}
+.hm-corner,.hm-rowlabel{align-items:flex-start;text-align:left;background:#fafcfd}
+.hm-cell{position:relative;border:1px solid var(--line);background:#fff;cursor:pointer;
+  min-height:46px;display:flex;align-items:center;justify-content:center;transition:background .12s,border-color .12s}
+.hm-cell:hover{border-color:var(--accent2)}
+.hm-cell[data-lvl="1"]{background:#e8f4fa}
+.hm-cell[data-lvl="2"]{background:#bfe3f2}
+.hm-cell[data-lvl="3"]{background:#7fc4e0;border-color:#5aa9c9}
+.hm-mark{font-size:12px;font-weight:800;color:#0d5a78}
+.hm-legend{font-size:11.5px;color:var(--muted);margin-top:7px}
+.hm-cmtrow{border-top:1px solid var(--line);padding:6px 10px;background:#fcfdfe}
+/* numeric matrix with columns */
+.nm-table{border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:4px}
+.nm-tr{display:grid;grid-template-columns:var(--nm-cols);align-items:center}
+.nm-tr+.nm-tr{border-top:1px solid var(--line)}
+.nm-head{background:#f4f7f9;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.nm-th{padding:9px 10px;font-size:12px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink);text-align:center}
+.nm-corner,.nm-rowlabel{text-align:left;background:#fafcfd}
+.nm-td{padding:8px 10px}
+.nm-td-na,.nm-th-na{text-align:center}
+.nm-input{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.nm-cmtrow{border-top:1px solid var(--line);padding:6px 10px;background:#fcfdfe}
+
+/* ============ gamified touches: bull's-eyes, voice mode, target HUD ============ */
+.opt{position:relative}
+/* The "hit": two target rings ripple out of the answer the moment it lands. */
+.opt.hit::before,.opt.hit::after{
+  content:"";position:absolute;left:14px;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;
+  border-radius:50%;border:2px solid #12789e;pointer-events:none;
+  animation:hit-ring .7s ease-out forwards;
+}
+.opt.hit::after{animation-delay:.18s;border-color:#ffd166}
+@keyframes hit-ring{
+  0%{opacity:.95;transform:scale(.4)}
+  70%{opacity:.55}
+  100%{opacity:0;transform:scale(2.6)}
+}
+.opt.hit{animation:hit-pop .35s ease-out}
+@keyframes hit-pop{0%{transform:scale(1)}40%{transform:scale(1.015) translateX(3px)}100%{transform:scale(1)}}
+.cg-cell{position:relative}
+.cg-cell.hit::before{
+  content:"";position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;
+  border-radius:50%;border:2px solid #12789e;pointer-events:none;animation:hit-ring .7s ease-out forwards;
+}
+
+/* HUD progress ring reads as a little target: outer guide, mid ring, solid core. */
+.ring-mid{stroke:rgba(255,255,255,.4);stroke-dasharray:2 3}
+.ring-core{fill:#ffd166;stroke:none}
+
+/* Mic toggle in the HUD (hidden by default; revealed where speech recognition exists). */
+#voice-btn{
+  width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.35);
+  background:rgba(255,255,255,.08);color:inherit;display:grid;place-items:center;
+  cursor:pointer;transition:background .2s,border-color .2s,box-shadow .2s;
+}
+#voice-btn:hover{background:rgba(255,255,255,.18)}
+#voice-btn.on{background:#ffd166;color:#0b4f6c;border-color:#ffd166;box-shadow:0 0 0 4px rgba(255,209,102,.25)}
+#voice-btn svg{width:16px;height:16px}
+
+/* Floating voice bar: pulsing mic, a live hint, and what was heard. */
+.voice-bar{
+  position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:70;
+  display:flex;align-items:center;gap:10px;max-width:92vw;
+  background:#0b4f6c;color:#fff;border-radius:999px;padding:9px 18px 9px 12px;
+  box-shadow:0 8px 28px rgba(11,79,108,.35);font-size:13.5px;
+}
+.vb-mic{position:relative;width:30px;height:30px;border-radius:50%;background:#12789e;display:grid;place-items:center;flex:0 0 auto}
+.vb-mic::before{
+  content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid rgba(127,212,240,.7);
+  animation:mic-pulse 1.6s ease-out infinite;
+}
+.vb-mic::after{
+  content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid rgba(127,212,240,.45);
+  animation:mic-pulse 1.6s .5s ease-out infinite;
+}
+@keyframes mic-pulse{0%{opacity:.9;transform:scale(.75)}100%{opacity:0;transform:scale(1.5)}}
+.vb-mic i{width:8px;height:14px;border-radius:4px;background:#fff}
+.vb-live{opacity:.9;white-space:nowrap}
+.vb-heard{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw;color:#7fd4f0}
+.vb-stop{flex:0 0 auto;border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;
+  border-radius:999px;padding:3px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.vb-stop:hover{background:rgba(255,255,255,.14)}
+
+/* Completion screen: arrow in the bull's-eye. */
+.done-icon.done-target{background:#fff;border:none;width:76px;height:76px}
+.done-icon.done-target svg{width:100%;height:100%;display:block}

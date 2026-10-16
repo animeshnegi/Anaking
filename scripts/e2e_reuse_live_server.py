@@ -70,6 +70,13 @@ def answers_for(is_test=False, q13=2):
         elif t == "slider":
             a[qid] = {"_": (q["min"] + q["max"]) // 2}
         elif t == "rating_grid":
+            if q.get("cols"):
+                codes = [c["code"] for c in q["cols"]]
+                a[qid] = {r["code"]: codes[i % len(codes)] for i, r in enumerate(q["rows"])}
+            else:
+                a[qid] = {r["code"]: q["scale"]["min"] + (i % (q["scale"]["max"] - q["scale"]["min"] + 1))
+                          for i, r in enumerate(q["rows"])}
+        elif t == "rating_scale":
             a[qid] = {r["code"]: q["scale"]["min"] + (i % (q["scale"]["max"] - q["scale"]["min"] + 1))
                       for i, r in enumerate(q["rows"])}
         elif t == "semantic_diff":

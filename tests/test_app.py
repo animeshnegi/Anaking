@@ -47,7 +47,7 @@ def test_survey_pages_inject_study_slug(client):
     for path in ("/survey/", "/survey/test", "/survey/beacon", "/survey/beacon/test"):
         r = client.get(path)
         assert r.status_code == 200, path
-        assert b'window.STUDY={slug:"beacon"}' in r.data
+        assert b'window.STUDY={slug:"beacon",paused:false}' in r.data
         assert b"/static/js/survey.js" in r.data
     assert client.get("/survey/does-not-exist").status_code == 404
 
@@ -269,6 +269,90 @@ def test_make_conjoint_is_balanced(client):
     r = client.post("/api/studio/make_conjoint",
                     json={"attributes": [{"id": "x"}]})
     assert r.status_code == 400
+
+
+def test_rich_text_keeps_tables_and_drops_scripts(client):
+    """The editor toolbar can insert tables and links; nothing unsafe survives the save."""
+    from core.sanitize import clean_html
+
+    html = ('<p style="text-align: center">Which would you choose?</p>'
+            '<table class="st-tbl"><tbody><tr><td>Cost</td><td>$100</td></tr>'
+            "<tr><td>OS</td><td>+3 months</td></tr></tbody></table>"
+            '<a href="https://example.com/trial">More</a>'
+            '<script>alert(1)</script><img src=x onerror="alert(2)">')
+    out = clean_html(html)
+    assert "<table" in out and "<td>" in out and "<tbody>" in out
+    assert 'href="https://example.com/trial"' in out and 'rel="noopener"' in out
+    assert "<script" not in out and "onerror" not in out and "<img" not in out
+    # the font/size/alignment controls the toolbar drives
+    styled = clean_html('<span style="font-size: 24px; font-family: Georgia, serif; text-align: right; '
+                        'position: fixed">Big</span>')
+    assert "font-size: 24px" in styled and "font-family: Georgia, serif" in styled
+    assert "text-align: right" in styled and "position" not in styled
+
+    saved = client.post("/api/studio/save", json={"title": "x", "cfg": dict(
+        PILOT_CFG, questions=[dict(PILOT_CFG["questions"][0], stem_html=html, stem="Which would you choose?")])})
+    assert saved.status_code == 200
+    cfg = client.get("/api/studio/study?slug=" + saved.get_json()["slug"]).get_json()["cfg"]
+    assert "<table" in cfg["questions"][0]["stem_html"]
+
+
+def test_make_conjoint_group_inclusion_and_shapes(client):
+    """Group inclusion hides an attribute in some tasks; both stored level shapes must export."""
+    from core.conjoint import profile_levels
+    from core.reporting import conjoint_long
+
+    attrs = [{"id": "A1", "label": "Color", "levels": ["Red", "Blue"]},
+             {"id": "A2", "label": "Price", "levels": ["$1", "$2", "$3", "$4", "$5", "$6"],
+              "group_inclusion": True, "higher_is_bad": True}]
+    d = client.post("/api/studio/make_conjoint",
+                    json={"attributes": attrs, "n_tasks": 6, "n_alts": 2, "seed": 7}).get_json()
+    assert d["n_tasks"] == 6 and d["n_alts"] == 2
+    assert d["attributes"][0]["label"] == "Color" and d["attributes"][1]["label"] == "Price"
+    assert d["attributes"][1]["group_inclusion"] is True
+    assert d["attributes"][0]["group_inclusion"] is False
+    shown = d["groups"]["A2"]
+    assert 0 < len(shown) < 6 and "A1" not in d["groups"]
+    for t_i, task in enumerate(d["tasks"]):
+        for profile in task:
+            assert (profile["A2"] is None) is (t_i not in shown), (t_i, profile)
+            assert profile["A1"] is not None
+    # the levels it does show are balanced over the tasks it appears in
+    seen = [d["balance"]["A2"][str(i)] for i in range(6)]
+    assert max(seen) - min(seen) <= 1, seen
+
+    # one design, two stored shapes: positional list (generated + seeded) and id-keyed dict
+    ids = [a["id"] for a in d["attributes"]]
+    for t_i, task in enumerate(d["tasks"], 1):
+        for profile in task:
+            positional = {"alt_id": 1, "levels": [profile[k] for k in ids]}
+            assert profile_levels(positional, ids) == profile
+            keyed = {"alt_id": 1, "levels": dict(profile)}
+            assert profile_levels(keyed, ids) == profile
+            assert profile_levels(dict(profile), ids) == profile
+
+    # the CSV export must survive either shape, and blank the hidden attribute
+    cfg = {"title": "CJ", "conjoint": {
+        "attributes": d["attributes"], "tasks": d["tasks"],
+        "levels": d["levels"], "n_tasks": 6, "n_alts": 2, "has_opt_out": True},
+        "questions": [{"id": "Q9", "section": "S1", "type": "choice_task", "stem": "Pick",
+                       "conjoint": {}}]}
+    answers = {"Q9": {f"T{i}": 1 for i in range(1, 7)}}
+    rec = {"respondent_code": "R001", "is_test": False, "is_test_label": "real",
+           "status": "complete", "answers": answers, "elapsed_seconds": 600}
+    headers, rows = conjoint_long([rec], cfg)
+    assert headers[:4] == ["respondent_code", "is_test", "task_id", "alt_id"] and len(rows) == 18
+    col = {h: i for i, h in enumerate(headers)}
+    hidden = [r for r in rows if r[3] == 1 and r[2] - 1 not in shown]
+    assert hidden and all(r[col["A2"]] == "" and r[col["A2_text"]] == "" for r in hidden)
+    asked = [r for r in rows if r[2] - 1 in shown and r[3] == 1]
+    assert asked and all(isinstance(r[col["A2"]], int) and r[col["A2"]] >= 1 and
+                         r[col["A2_text"]] for r in asked)
+    # the analysis tab reads the same profiles
+    from core.reporting import analysis_for
+    share = analysis_for([rec], cfg)["choice_share"]
+    a2 = [x for x in share if x["attr"] == "A2"]
+    assert len(a2) == 6 and all(x["share"] >= 0 for x in a2)
 
 
 # ---------------------------------------------------------------- exports & reset

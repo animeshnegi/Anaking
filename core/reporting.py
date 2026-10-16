@@ -8,8 +8,9 @@ import json
 import time
 
 from .ai_detect import VERDICT_LIKELY, duplicate_verbatims
-from .conjoint import task_list
+from .conjoint import profile_levels, task_list
 from .qc import free_text, qc_flags, score_free_text
+from . import screening
 
 
 def _verbatim_qs(cfg: dict) -> list:
@@ -79,12 +80,26 @@ def flatten(respondent, answers: dict, cfg: dict) -> dict:
                                          else "Detractor")
             except (ValueError, TypeError):
                 out[qid + "_segment"] = ""
-        elif t in ("rating_grid", "semantic_diff", "emoji_grid", "sum_to_100"):
+        elif t == "rating_grid" and q.get("cols"):
+            # a rows x columns choice grid: one column code per row, plus its wording
+            col_labels = {str(c["code"]): c.get("label", "") for c in q["cols"]}
+            for r in q["rows"]:
+                v = a.get(r["code"], "")
+                if isinstance(v, list):               # multi select: several columns on one row
+                    out[f"{qid}_{r['code']}"] = ";".join(str(x) for x in v)
+                    out[f"{qid}_{r['code']}_text"] = "; ".join(
+                        col_labels.get(str(x), str(x)) for x in v)
+                else:
+                    out[f"{qid}_{r['code']}"] = v
+                    if v not in ("", None):
+                        out[f"{qid}_{r['code']}_text"] = (
+                            col_labels.get(str(v), str(v)) if str(v) != "NA" else "NA")
+        elif t in ("rating_grid", "rating_scale", "semantic_diff", "emoji_grid", "sum_to_100"):
             for r in q["rows"]:
                 out[f"{qid}_{r['code']}"] = a.get(r["code"], "")
         elif t == "heatmap":
             for r in q["rows"]:
-                for c in q["cols"]:
+                for c in (q.get("cols") or []):
                     out[f"{qid}_{r['code']}_{c['code']}"] = a.get(
                         r["code"] + "_" + c["code"], "")
         elif t == "multi_select":
@@ -102,8 +117,13 @@ def flatten(respondent, answers: dict, cfg: dict) -> dict:
         elif t in ("date",):
             out[qid] = a.get("_", "")
         elif t == "numeric_matrix":
+            nm_cols = q.get("cols") or []
             for r in q["rows"]:
-                out[f"{qid}_{r['code']}"] = a.get(r["code"], "")
+                if nm_cols:                      # a table: one number per row x column
+                    for c in nm_cols:
+                        out[f"{qid}_{r['code']}_{c['code']}"] = a.get(r["code"] + "_" + c["code"], "")
+                else:
+                    out[f"{qid}_{r['code']}"] = a.get(r["code"], "")
         elif t == "delta":
             out[qid + "_before"] = a.get("before", "")
             out[qid + "_after"] = a.get("after", "")
@@ -132,8 +152,16 @@ def flatten(respondent, answers: dict, cfg: dict) -> dict:
                                                     "no" if ack is False else "")
             out[qid + "_pasted_chars"] = meta.get("pasted_chars", "")
             out[qid + "_keystrokes"] = meta.get("keystrokes", "")
+        # comment boxes: one for the whole question, one under any row that asked for one
+        if (q.get("comments") or {}).get("mode") and (q.get("comments") or {}).get("mode") != "none":
+            out[qid + "_comment"] = a.get("_comment", "")
+        for r in (q.get("rows") or []):
+            if isinstance(r, dict) and (r.get("comment") or "none") != "none":
+                out[f"{qid}_{r['code']}_comment"] = a.get("c_" + str(r["code"]), "")
         if q.get("randomize") and q.get("randomize") != "none":
             out[qid + "_order_shown"] = a.get("_order", "")
+        if isinstance(q.get("randomize"), dict) and q["randomize"].get("cols"):
+            out[qid + "_order_cols_shown"] = a.get("_order_cols", "")
     return out
 
 
@@ -161,10 +189,13 @@ def conjoint_long(records: list, cfg: dict) -> tuple:
                 continue
             picked = int(picked)
             for a_i, alt in enumerate(tl[t_i - 1], start=1):
-                profile = alt["levels"] if isinstance(alt, dict) else alt
+                profile = profile_levels(alt, attrs)
+                shown = [profile[k] for k in attrs]
                 rows.append([rec["respondent_code"], rec["is_test_label"], t_i, a_i, 0,
-                             int(picked == a_i)] + [int(p) + 1 for p in profile] +
-                            [levels[attrs[k]][int(profile[k])] for k in range(len(attrs))])
+                             int(picked == a_i)] +
+                            [(int(p) + 1 if p is not None else "") for p in shown] +
+                            [(levels[k][int(profile[k])] if profile[k] is not None else "")
+                             for k in attrs])
             rows.append([rec["respondent_code"], rec["is_test_label"], t_i, 0, 1,
                          int(picked == 0)] + [""] * (2 * len(attrs)))
     return headers, rows
@@ -288,7 +319,11 @@ def build_sheets(records: list, scope: str, cfg: dict):
     dd_rows = []
     for q in cfg.get("questions", []):
         stem = q["stem"]
-        if q.get("show_if") and q["show_if"].get("rules"):
+        # screening rules travel with the questionnaire - document them beside the question
+        for line in screening.describe(q, cfg.get("questions", [])):
+            dd_rows.append([q["id"], q.get("section", ""), q["type"], stem, "(screening)",
+                            line, "survey ends here for the respondent"])
+        if q.get("show_if") and q["show_if"].get("rules") and q["show_if"].get("off") is not True:
             rules = " %s " % ("OR" if q["show_if"].get("match") == "any" else "AND")
             dd_rows.append([q["id"], q["section"], q["type"], stem, "(show-if)",
                             rules.join(f"{r.get('q')} {r.get('op')} {r.get('value', '')}".strip()
@@ -300,6 +335,23 @@ def build_sheets(records: list, scope: str, cfg: dict):
                                 "option" + (" - TERMINATES" if o.get("terminate") else "")
                                 + (" - EXCLUSIVE" if o.get("exclusive") else "")
                                 + (" - pinned" if o.get("pin") else "")])
+        elif q["type"] == "rating_grid" and q.get("cols"):
+            mode = "multi-select" if q.get("select") == "multi" else "single-select"
+            coltxt = ", ".join(f"{c['code']} {c.get('label', '')}".strip()
+                               for c in q["cols"])
+            for r in q["rows"]:
+                dd_rows.append([q["id"], q["section"], q["type"], stem, r["code"], r["label"],
+                                f"{mode} from: {coltxt}"])
+        elif q["type"] == "rating_scale":
+            sc = q.get("scale") or {}
+            scale = f"{sc.get('min', 1)}-{sc.get('max', 5)}"
+            labels = [sc.get("min_label"), sc.get("mid_label"), sc.get("max_label")]
+            labels = [x for x in labels if x]
+            if labels:
+                scale += " (" + " / ".join(labels) + ")"
+            for r in q["rows"]:
+                dd_rows.append([q["id"], q["section"], q["type"], stem, r["code"], r["label"],
+                                scale])
         elif q["type"] in ("rating_grid", "semantic_diff", "sum_to_100", "emoji_grid"):
             scale = (f"{q['scale']['min']}-{q['scale']['max']}" if "scale" in q
                      else "0-100, rows sum to 100")
@@ -331,9 +383,16 @@ def build_sheets(records: list, scope: str, cfg: dict):
             dd_rows.append([q["id"], q["section"], q["type"], stem, "_", "calendar date",
                             "YYYY-MM-DD"])
         elif q["type"] == "numeric_matrix":
+            nm_cols = q.get("cols") or []
             for r in q["rows"]:
-                dd_rows.append([q["id"], q["section"], q["type"], stem, r["code"], r["label"],
-                                f"{q.get('min', 0)}-{q.get('max', 100)} per row"])
+                if nm_cols:                # a table: one field per row x column
+                    for c in nm_cols:
+                        dd_rows.append([q["id"], q["section"], q["type"], stem,
+                                        f"{r['code']}_{c['code']}", f"{r['label']} \u00D7 {c['label']}",
+                                        f"{q.get('min', 0)}-{q.get('max', 100)} per cell"])
+                else:
+                    dd_rows.append([q["id"], q["section"], q["type"], stem, r["code"], r["label"],
+                                    f"{q.get('min', 0)}-{q.get('max', 100)} per row"])
         elif q["type"] == "delta":
             dd_rows.append([q["id"], q["section"], q["type"], stem,
                             "before/after/delta", "two values and their difference",
@@ -370,6 +429,13 @@ def build_sheets(records: list, scope: str, cfg: dict):
     ]
 
 
+def _picked(v, code) -> bool:
+    """Whether a choice-grid row's answer contains the column's code (single or multi)."""
+    if isinstance(v, list):
+        return any(str(x) == str(code) for x in v)
+    return v is not None and v != "" and str(v) == str(code)
+
+
 def analysis_for(records: list, cfg: dict) -> dict:
     complete = [r for r in records if r["status"] == "complete"]
     out = {"n_started": len(records), "n_complete": len(complete),
@@ -385,13 +451,28 @@ def analysis_for(records: list, cfg: dict) -> dict:
 
     for q in cfg.get("questions", []):
         t = q["type"]
-        if t in ("rating_grid", "semantic_diff", "emoji_grid"):
+        if t in ("rating_scale", "semantic_diff", "emoji_grid") or \
+           (t == "rating_grid" and not q.get("cols")):
             rows = []
             for r in q["rows"]:
                 rows.append({"label": r["label"],
                              "mean": mean([rec["answers"].get(q["id"], {}).get(r["code"])
                                            for rec in complete])})
             out["ratings"].append({"id": q["id"], "stem": q["stem"][:60], "rows": rows})
+        elif t == "rating_grid" and q.get("cols"):
+            # a choice grid: share of respondents picking each column, per row
+            rows = []
+            for r in q["rows"]:
+                cells = []
+                for c in q["cols"]:
+                    n = sum(1 for rec in complete
+                            if _picked(rec["answers"].get(q["id"], {}).get(r["code"]),
+                                       c["code"]))
+                    cells.append({"label": c.get("label", str(c["code"])),
+                                  "share": round(100 * n / len(complete), 1) if complete else 0})
+                rows.append({"label": r["label"], "cells": cells})
+            out.setdefault("choice_grids", []).append(
+                {"id": q["id"], "stem": q["stem"][:60], "rows": rows})
         elif t == "nps":
             seg = {"Promoter": 0, "Passive": 0, "Detractor": 0}
             for rec in complete:
@@ -442,10 +523,13 @@ def analysis_for(records: list, cfg: dict) -> dict:
                     if picked in (None, ""):
                         continue
                     for a_i, alt in enumerate(task, 1):
-                        profile = alt["levels"] if isinstance(alt, dict) else alt
+                        profile = profile_levels(alt, [a["id"] for a in design["attributes"]])
                         chosen = int(picked) == a_i
-                        for ai, attr in enumerate(design["attributes"]):
-                            key = (attr["id"], int(profile[ai]))
+                        for attr in design["attributes"]:
+                            lv = profile[attr["id"]]
+                            if lv is None:            # group-inclusion attribute hidden here
+                                continue
+                            key = (attr["id"], int(lv))
                             lvl_seen[key] = lvl_seen.get(key, 0) + 1
                             if chosen:
                                 lvl_chosen[key] = lvl_chosen.get(key, 0) + 1

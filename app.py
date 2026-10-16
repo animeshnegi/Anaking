@@ -34,7 +34,7 @@ from config import CONFIGS, DATA_DIR, UPLOAD_DIR, Config
 from core.seed import seed_beacon
 from routes import register_routes
 
-__version__ = "3.2.0"
+__version__ = "3.3.0"
 
 
 class RegexConverter(BaseConverter):
@@ -103,6 +103,12 @@ def main() -> None:
     args = ap.parse_args()
 
     app = create_app("development" if args.debug else None)
+
+    # Jinja caches compiled templates unless the app is in debug mode, so editing a .html file
+    # while the dev server runs would keep serving the old markup until a restart.  Reload them
+    # here; production (gunicorn) keeps the cache.
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.jinja_env.auto_reload = True
 
     shown = "localhost" if args.host in ("0.0.0.0", "::") else args.host
     base = f"http://{shown}:{args.port}"

@@ -163,6 +163,8 @@ const fire = (el, type) => el.dispatchEvent(new el.ownerDocument.defaultView.Eve
   check("no Admin JS errors", A.errs.length === 0, A.errs.join(" | "));
   A.w.close();
 
+  await req("POST", "/api/studio/delete", JSON.stringify({ slug: slug }));   // leave the DB as we found it
+
   console.log(fails ? "\n" + fails + " check(s) FAILED" : "\nall checks passed");
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error("ERROR", e); process.exit(1); });

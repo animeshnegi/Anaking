@@ -58,11 +58,21 @@ def make_answers(style):
         elif t == "slider":
             a[qid] = {"_": style.get(qid, random.randint(q["min"] + 2, q["max"]))}
         elif t == "rating_grid":
-            if style.get("straightline") and qid == "Q7":
+            if q.get("cols"):
+                codes = [c["code"] for c in q["cols"]]
+                if q.get("select") == "multi":
+                    a[qid] = {r["code"]: random.sample(codes, k=min(2, len(codes)))
+                              for r in q["rows"]}
+                else:
+                    a[qid] = {r["code"]: random.choice(codes) for r in q["rows"]}
+            elif style.get("straightline") and qid == "Q7":
                 a[qid] = {r["code"]: 7 for r in q["rows"]}
             else:
                 a[qid] = {r["code"]: random.randint(q["scale"]["min"], q["scale"]["max"])
                           for r in q["rows"]}
+        elif t == "rating_scale":
+            a[qid] = {r["code"]: random.randint(q["scale"]["min"], q["scale"]["max"])
+                      for r in q["rows"]}
         elif t == "semantic_diff":
             a[qid] = {r["code"]: random.randint(q["scale"]["min"], q["scale"]["max"])
                       for r in q["rows"]}

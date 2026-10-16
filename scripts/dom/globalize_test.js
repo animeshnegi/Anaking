@@ -155,7 +155,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     /Questions/.test(groups.join("|")) && /Methodologies/.test(groups.join("|")) &&
     /Survey flow/.test(groups.join("|")) && /Objects/.test(groups.join("|")), groups.join(" | "));
   const items = $$("#st-modal .st-type b").map(b => b.textContent.trim());
-  ["Multiple Choice", "Grid / Rating Scale",
+  ["Single Select", "Grid", "Rating Scale",
     "Rank Order", "Scale", "Text Entry", "Numeric Entry", "Net Promoter", "Constant Sum", "Max Diff",
     "Numeric Matrix", "Date", "Delta", "Conjoint", "Concept Test", "Heatmap",
     "Welcome Page", "Thank You Page", "Question Page", "Question Loop", "Page Randomizer",

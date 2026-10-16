@@ -128,7 +128,7 @@ def test_word_outline_is_a_real_docx_with_the_questionnaire():
     assert "Global study" in doc and "Pick one" in doc
     assert "-  1. Option A  [TERMINATES]" in doc and "-  2. Option B" in doc
     assert "Show only if Q1 has selected 1" in doc
-    assert "screening: options marked TERMINATES end the survey" in doc
+    assert "screening: screen out when Q1 is Option A" in doc
     assert "Intro" in doc
     # lean on purpose: no welcome / thank-you copy in the outline
     assert "Diez minutos" not in doc and "That is everything" not in doc

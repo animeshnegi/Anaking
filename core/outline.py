@@ -17,6 +17,7 @@ import zipfile
 from xml.sax.saxutils import escape
 
 from .i18n import apply_language
+from . import screening
 
 _CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -52,10 +53,10 @@ def _strip(html: str) -> str:
     return re.sub(r"<[^>]+>", "", html or "")
 
 
-def _logic_line(q: dict) -> str:
+def _logic_line(q: dict, questions: list | None = None) -> str:
     """Show-if / screening logic as one plain-English line, or ''."""
     parts = []
-    si = q.get("show_if") or {}
+    si = (q.get("show_if") or {}) if (q.get("show_if") or {}).get("off") is not True else {}
     rules = si.get("rules") or []
     if rules:
         join = " AND " if si.get("match", "all") == "all" else " OR "
@@ -65,18 +66,18 @@ def _logic_line(q: dict) -> str:
         if si.get("negate"):
             txt = "NOT (" + txt + ")"
         parts.append("Show only if " + txt)
-    if any(o.get("terminate") for o in q.get("options", []) or []):
-        parts.append("screening: options marked TERMINATES end the survey")
+    for line in screening.describe(q, questions):
+        parts.append("screening: " + line)
     return "  \u00B7  ".join(parts)
 
 
-def _question_paras(q: dict) -> list[str]:
+def _question_paras(q: dict, questions: list | None = None) -> list[str]:
     out = []
     stem = _strip(q.get("stem_html")) or q.get("stem") or _strip(q.get("concept_html")) \
         or q.get("concept") or _strip(q.get("body_html")) or q.get("body") or "(no text)"
     out.append(_para(_run(f"{q.get('id')}.  ", bold=True) + _run(stem, bold=True),
                      after=60))
-    logic = _logic_line(q)
+    logic = _logic_line(q, questions)
     if logic:
         out.append(_para(_run("Logic: " + logic, muted=True, italic=True, size=18),
                          after=60, indent=240))
@@ -124,7 +125,7 @@ def build_outline(study_cfg: dict, lang: str | None = None) -> bytes:
         body.append(_para(_run(sec_titles.get(sec_id, sec_id) or sec_id, bold=True,
                                size=26), after=120))
         for q in qs:
-            body.extend(_question_paras(q))
+            body.extend(_question_paras(q, cfg.get("questions", [])))
 
     document = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'

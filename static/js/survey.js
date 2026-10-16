@@ -22,7 +22,10 @@
   var t0 = Date.now();
   var points = 0;
   var seenSections = {};
-  var soundOn = true;
+  // Audio is opt-in. It must never start before the respondent chooses a preference.
+  var soundOn = false;
+  var audioPref = "manual"; // manual | all | off
+  var testNotes = {}, reviewToken = "";
   var narrator = null;
   var explainer = null;
   var dwellTimer = null;
@@ -200,21 +203,27 @@
     var t = q.id + ". " + q.stem + (q.help ? " " + q.help : "");
     if (q.options) t += " The options are: " +
       q.options.map(function (o) { return o.label; }).join("; ") + ".";
-    if (q.rows && q.scale) t += " Please rate each item from " + q.scale.min + " to " + q.scale.max +
+    if (q.rows && q.cols) t += (q.select === "multi" ? " For each row, tick every column that applies."
+      : " For each row, choose one column.") +
+      " Rows: " + q.rows.map(function (r) { return r.label; }).join("; ") +
+      ". Columns: " + q.cols.map(function (c) { return c.label; }).join("; ") + ".";
+    else if (q.rows && q.scale) t += " Please rate each item from " + q.scale.min + " to " + q.scale.max +
       ". Items: " + q.rows.map(function (r) { return r.label; }).join("; ") + ".";
     return t;
   }
 
   function taskSpeechText(step) {
     var q = step.q;
-    var alts = CONJOINT.tasks[String(step.taskId)];
+    var alts = taskAt(step.taskId);
     var t = "Choice task " + step.slot + " of " + step.total + ". Patient: " + q.vignette + ". ";
     alts.forEach(function (alt, i) {
-      t += "Treatment " + (i + 1) + ": " + CONJOINT.attributes.map(function (a, ai) {
-        return a.levels[alt.levels[ai]];
-      }).join("; ") + ". ";
+      var said = (CONJOINT.attributes || []).map(function (a, ai) {
+        var lv = altLevel(alt, a, ai);
+        return lv == null ? "" : (a.levels || [])[lv];
+      }).filter(function (v) { return v != null; });
+      t += "Treatment " + (i + 1) + ": " + said.join("; ") + ". ";
     });
-    t += "Or choose: " + q.opt_out_label + ".";
+    if (CONJOINT.has_opt_out !== false) t += "Or choose: " + q.opt_out_label + ".";
     return t;
   }
 
@@ -253,7 +262,7 @@
   // It never blocks the survey - it only comments.
   var coachTimer = null;
   var PREVIEW = !!window.BEACON_PREVIEW_MODE;   // set by the Studio: render questions, no session/boot
-  function coachSay(html, tone) {
+  function coachSay(html, tone, ms) {
     if (PREVIEW) return;
     var c = $("#coach");
     if (!c) {
@@ -273,7 +282,7 @@
     c.className = "coach show " + (tone || "info");
     c.querySelector(".coach-msg").innerHTML = html;
     if (coachTimer) clearTimeout(coachTimer);
-    coachTimer = setTimeout(function () { c.classList.remove("show"); }, 5200);
+    coachTimer = setTimeout(function () { c.classList.remove("show"); }, ms || 5200);
   }
 
   // ============================================================ verbatim quality
@@ -492,6 +501,7 @@
     ta.addEventListener("blur", function () {
       awayAt = Date.now();
       setAns(q.id, "_meta", snapshot());
+      ansChanged();                          // screening on text waits until the box is left
     });
     ta.addEventListener("focus", function () {
       if (awayAt) { meta.blur_ms += Date.now() - awayAt; awayAt = 0; }
@@ -609,8 +619,19 @@
     setTimeout(function () { t.remove(); }, 2750);
   }
 
+  // Authors can switch the game layer off in Studio; the plain progress bar on top stays.
+  function gamifyOn() { return !!(SPEC && SPEC.gamify !== false); }
+
+  // A quiet bull's-eye: two target rings ripple out of an answer the moment it lands,
+  // so picking feels like hitting the mark - no words, no noise, just feedback.
+  function bullseye(node) {
+    if (!node || node.classList.contains("hit")) return;
+    node.classList.add("hit");
+    setTimeout(function () { node.classList.remove("hit"); }, 800);
+  }
+
   function addPoints(n) {
-    if (PREVIEW) return;
+    if (PREVIEW || !gamifyOn()) return;
     var before = rankFor(points);
     points += n;
     var after = rankFor(points);
@@ -623,10 +644,20 @@
     box.classList.remove("bump");
     void box.offsetWidth;
     box.classList.add("bump");
+    floatPoints(n);
     if (before !== after) {
       toast("&#9733; Rank up: " + after);
       confetti(18);
     }
+  }
+
+  // "+25" rises out of the points counter, so a reward is seen as it lands.
+  function floatPoints(n) {
+    var box = $("#points") && $("#points").parentElement;
+    if (!box || !(n > 0)) return;
+    var f = el("span", "pts-float", "+" + n);
+    box.appendChild(f);
+    setTimeout(function () { f.remove(); }, 1400);
   }
 
   function setProgress(pct) {
@@ -638,18 +669,8 @@
     if (bar) bar.style.width = pct + "%";
   }
 
-  function celebrate(title, sub, pts) {
-    var c = $("#celebrate");
-    $("#celebrate-title").textContent = title;
-    $("#celebrate-sub").textContent = sub;
-    $("#celebrate-pts").innerHTML = "&#9733; +" + pts + " insight points";
-    c.hidden = false;
-    addPoints(pts);
-    confetti();
-    $("#celebrate-next").onclick = function () { c.hidden = true; };
-  }
-
   function confetti(n) {
+    if (!gamifyOn()) return;
     var colors = ["#0b4f6c", "#12789e", "#7fd4f0", "#ffd166", "#1a7f4b"];
     n = n || 40;
     for (var i = 0; i < n; i++) {
@@ -665,6 +686,140 @@
         }, i * 28);
       })(i);
     }
+  }
+
+  // ============================================================ voice commands
+  // Speak your answers: say an option (or its number), several options joined
+  // with "and", then say "next". Runs on the browser's own speech recognition
+  // (Web Speech API) - free to ship, nothing to configure server-side. Voice is
+  // strictly optional: tapping always works, and on browsers without the API
+  // every voice control simply stays hidden.
+  var voice = null, voiceOn = false, voiceBar = null;
+
+  function voiceSupported() {
+    return !PREVIEW && window.BeaconVoice && window.BeaconVoice.supported();
+  }
+
+  // Options of the question currently on screen (options the voice picks from).
+  function voiceCtx() {
+    var q = steps[cur] && steps[cur].q;
+    if (!q || !q.options) return { options: [], multi: false, type: (q && q.type) || "" };
+    return { options: q.options, multi: q.type === "multi_select", type: q.type };
+  }
+
+  function showVoiceBar(msg) {
+    if (!voiceBar) {
+      voiceBar = el("div", "voice-bar",
+        '<span class="vb-mic" aria-hidden="true"><i></i></span>' +
+        '<span class="vb-live">Listening\u2026</span>' +
+        '<span class="vb-heard" aria-live="polite"></span>' +
+        '<button type="button" class="vb-stop">Stop</button>');
+      voiceBar.querySelector(".vb-stop").addEventListener("click", function () {
+        setVoice(false);
+        coachSay("Voice answering is off - tap your answers.", "info");
+      });
+      document.body.appendChild(voiceBar);
+    }
+    var live = voiceBar.querySelector(".vb-live");
+    var heard = voiceBar.querySelector(".vb-heard");
+    live.textContent = msg || "Listening\u2026 say an option or \u201Cnext\u201D";
+    heard.textContent = "";
+    voiceBar.classList.add("listening");
+    voiceBar.hidden = false;
+  }
+
+  function hideVoiceBar() {
+    if (voiceBar) voiceBar.hidden = true;
+  }
+
+  function voiceTranscript(text) {
+    if (!voiceBar) return;
+    var heard = voiceBar.querySelector(".vb-heard");
+    heard.textContent = "\u201C" + text + "\u201D";
+  }
+
+  // Turn one finished utterance into survey actions and run them in order.
+  function voiceHear(text) {
+    if (!text || !voiceOn) return;
+    voiceTranscript(text);
+    var ctx = voiceCtx();
+    var acts = window.BeaconVoice.parseCommand(text, ctx);
+    var picked = 0, spoken = false;
+    acts.forEach(function (a) {
+      if (a.act === "next") {
+        if (spoken) coachSay("Next question coming up\u2026", "info");
+        next();
+      } else if (a.act === "back") {
+        go(cur - 1);
+      } else if (a.act === "clear") {
+        voiceClear();
+        coachSay("Selections cleared.", "info");
+      } else if (a.act === "pick") {
+        if (ctx.type !== "single_select" && ctx.type !== "multi_select") {
+          if (!spoken) {
+            coachSay("This one needs a quick tap \u2014 then say \u201Cnext\u201D when you\u2019re ready.", "info");
+            spoken = true;
+          }
+          return;
+        }
+        var row = document.querySelector('#app .opt[data-code="' + String(a.code).replace(/"/g, '\\"') + '"]');
+        if (row) { row.click(); picked++; }
+      } else if (!spoken) {
+        coachSay("I heard \u201C" + escHtml(a.text) + "\u201D \u2014 say an option name or number, or \u201Cnext\u201D.", "warn");
+        spoken = true;
+      }
+    });
+    if (picked) coachSay(picked === 1 ? "Locked in." : "Locked in " + picked + " answers.", "info");
+    showVoiceBar(); // settle the bar back to listening state for the next utterance
+  }
+
+  function voiceClear() {
+    Array.prototype.forEach.call(document.querySelectorAll("#app .opt input[type='checkbox']"), function (i) {
+      if (i.checked) i.closest(".opt").click();
+    });
+  }
+
+  // What a respondent hears when voice answering stops by itself: the microphone is blocked or
+  // missing, or the speech service cannot be reached.  Every message ends with a way forward.
+  var VOICE_ERRORS = {
+    "not-allowed": "Microphone access is blocked. Allow it for this site, then turn voice on again.",
+    "service-not-allowed": "This browser won\u2019t use its speech service here. Tap your answers to carry on.",
+    "audio-capture": "No microphone was found. Connect one, then turn voice on again.",
+    "network": "Couldn\u2019t reach the browser\u2019s speech service. Tap your answers to carry on.",
+    "language-not-supported": "This browser can\u2019t listen in this survey\u2019s language. Tap your answers to carry on.",
+    "no-audio": "Can\u2019t hear the microphone. Check that it is allowed and not muted, then turn voice on again.",
+    "no-start": "Voice answering couldn\u2019t start in this browser. Tap your answers to carry on."
+  };
+  function voiceFailed(code) {
+    if (!voiceOn) return;                              // a late report after we already stopped
+    setVoice(false);
+    coachSay(VOICE_ERRORS[code] || "Voice answering stopped. Tap your answers to carry on.", "warn", 9000);
+  }
+
+  function setVoice(on) {
+    if (on && !voiceSupported()) return;
+    if (on && !voice) {
+      voice = window.BeaconVoice.create({
+        onInterim: function (t) { voiceTranscript(t); },
+        onFinal: function (t) { voiceHear(t); },
+        onState: function (state, code) { if (state === "error") voiceFailed(code); }
+      });
+    }
+    if (!voice) return;
+    voiceOn = on;
+    var btn = $("#voice-btn");
+    if (on) {
+      voice.start();                                   // may report a failure straight away
+      if (voiceOn) {
+        showVoiceBar();
+        coachSay("Voice mode on \u2014 say an option or its number, then \u201Cnext\u201D. Press <b>Stop</b> below to switch it off.", "info");
+      }
+    } else {
+      voice.stop();
+      hideVoiceBar();
+    }
+    if (btn) { btn.classList.toggle("on", voiceOn); btn.setAttribute("aria-pressed", voiceOn ? "true" : "false"); }
+    document.body.classList.toggle("voice-on", voiceOn);
   }
 
   // ============================================================ explainer
@@ -702,8 +857,6 @@
   }
 
   function runExplainer(scenes, onDone) {
-    // never trap the respondent behind a celebration modal
-    $("#celebrate").hidden = true;
     var ov = $("#explainer");
     $("#ex-badge").textContent = scenes.length > 1 ? "Product profile" : "How the choices work";
     ov.hidden = false;
@@ -766,7 +919,7 @@
       if (q.type === "choice_task") {
         var order = (SESSION.task_order && SESSION.task_order.length)
           ? SESSION.task_order
-          : Object.keys(CONJOINT.tasks).map(Number);
+          : taskIds();
         order.forEach(function (tid, i) {
           steps.push({ kind: "task", taskId: tid, slot: i + 1, q: q, total: order.length });
         });
@@ -799,20 +952,39 @@
     switch (q.type) {
       case "single_select": case "numeric": case "slider": case "open_text":
         return a._ !== undefined && a._ !== "";
-      case "rating_grid": case "semantic_diff":
-        return q.rows.every(function (r) { return a[r.code] !== undefined; });
+      case "rating_grid": case "semantic_diff": case "rating_scale":
+        return q.rows.every(function (r) {
+          var v = a[r.code];
+          if (Array.isArray(v)) return v.length > 0;   // a multi-select grid row needs one tick
+          return v !== undefined && v !== "";
+        });
       case "sum_to_100":
         return q.rows.some(function (r) { return a[r.code] !== undefined && a[r.code] !== ""; });
       case "multi_select":
         return (a.codes || []).length > 0;
       case "date":
         return !!(a && a._);
-      case "numeric_matrix":
+      case "numeric_matrix": {
+        var nmc = q.cols || [];
+        if (nmc.length) {                            // a table: every cell, unless the row is N/A
+          return (q.rows || []).length > 0 && (q.rows || []).every(function (r) {
+            if (a[r.code] === "NA") return true;
+            return nmc.every(function (c) {
+              var v = a[r.code + "_" + c.code];
+              return v !== undefined && v !== "";
+            });
+          });
+        }
         return (q.rows || []).length > 0 && (q.rows || []).every(function (r) { return a[r.code] !== undefined && a[r.code] !== ""; });
+      }
       case "delta":
         return !!(a && a.before !== undefined && a.before !== "" && a.after !== undefined && a.after !== "");
-      case "concept_test":
+      case "concept_test": case "emoji_grid":
         return (q.rows || []).every(function (r) { return a[r.code] !== undefined; });
+      case "heatmap":                                   // every cell is optional, one is enough
+        return Object.keys(a).some(function (k) {
+          return k.charAt(0) !== "_" && k.slice(0, 2) !== "c_" && a[k] !== "" && a[k] !== undefined;
+        });
       case "loop":
         return (q.items || []).length > 0 && (q.items || []).every(function (it) { return a[it.code] !== undefined && String(a[it.code]).trim() !== ""; });
       case "text_block":
@@ -827,14 +999,15 @@
 
   // ============================================================ renderers
   // per-respondent, stable option order (randomisation is seeded by the session id)
-  function orderedList(list, q) {
+  function orderedList(list, q, axis) {
     if (!window.BeaconQ || !q.randomize) return list;
     var seed = (SESSION && SESSION.session_id) || "preview";
-    var out = window.BeaconQ.order(list, q, seed);
+    var out = window.BeaconQ.order(list, q, seed, axis);
     // remember what the respondent actually saw, for analysis
     var a = answers[q.id] || {};
-    var shown = out.map(function (x) { return x.code; }).join(",");
-    if (a._order !== shown) setAns(q.id, "_order", shown);
+    var shown = out.map(function (x) { return x.code !== undefined ? x.code : x.v; }).join(",");
+    var key = axis === "cols" ? "_order_cols" : "_order";
+    if (a[key] !== shown) setAns(q.id, key, shown);
     return out;
   }
 
@@ -846,6 +1019,7 @@
 
     options.forEach(function (o) {
       var row = el("div", "opt" + (o.exclusive ? " opt-excl" : ""));
+      row.dataset.code = String(o.code);
       var input = el("input");
       input.type = multi ? "checkbox" : "radio";
       input.name = q.id;
@@ -862,6 +1036,7 @@
 
       row.addEventListener("click", function (ev) {
         if (ev.target.tagName !== "INPUT") input.checked = !input.checked;
+        if (input.checked) bullseye(row);
         var codes = getAns(q.id, "codes") || [];
         if (multi) {
           var i = codes.map(String).indexOf(String(o.code));
@@ -885,6 +1060,7 @@
         } else {
           setAns(q.id, "_", o.code);
         }
+        ansChanged();                          // screening: fires immediately if this answer ends it
         paint();
         if (o.other && otherBox) {
           otherBox.classList.toggle("show", input.checked);
@@ -921,7 +1097,111 @@
   // Spectrum scale: a draggable gradient track with detents and a value bubble.
   // Same data contract as the old 1-7 button row (one integer per item), but the
   // interaction is continuous, visual and touch friendly instead of a button strip.
-  function renderScale(min, max, val, onPick) {
+  // ============================================================ grids
+  // A grid is a title, two axes and a scale.  The Studio gives every row, column and scale
+  // point its own label, format, image / video / audio clip, comment box and place in the
+  // order - everything below simply draws what the Studio stored.
+  var EMOJI_FACES = ["\uD83D\uDE1E", "\uD83D\uDE15", "\uD83D\uDE10", "\uD83D\uDE42", "\uD83D\uDE0D"];   // frowning .. smiling
+
+  // One entry for every value of the scale, each with its own label and attachment.
+  function scalePointsOf(q) {
+    var sc = q.scale || {}, min = sc.min != null ? Number(sc.min) : 1;
+    var max = sc.max != null ? Number(sc.max) : 5, have = {};
+    (sc.points || []).forEach(function (p) { have[Number(p.v)] = p; });
+    var out = [];
+    for (var v = min; v <= max; v++) {
+      var p = have[v] || {}, label = p.label || "";
+      if (!label && q.type === "emoji_grid") {
+        label = sc.faces ? (sc.faces[v - min] || "")
+          : (max - min + 1 === EMOJI_FACES.length ? EMOJI_FACES[v - min] : "");
+      }
+      out.push({ v: v, label: label, fmt: p.fmt, media: p.media,
+                 tip: (q.type === "emoji_grid" && sc.face_labels ? sc.face_labels[v - min] : "") || "" });
+    }
+    return out;
+  }
+  // Plain / bold / italic / bold+italic - the little format choice in the Studio.
+  function fmtNode(text, fmt) {
+    if (fmt === "b" || fmt === "bi") {
+      var b = el("b");
+      if (fmt === "bi") { var bi = el("i"); bi.textContent = text; b.appendChild(bi); }
+      else b.textContent = text;
+      return b;
+    }
+    if (fmt === "i") { var ii = el("i"); ii.textContent = text; return ii; }
+    var sp = el("span"); sp.textContent = text; return sp;
+  }
+  // A row, column or scale point label, with its attachment underneath when it carries one.
+  function itemLabelNode(it, cls) {
+    var box = el("div", cls || "rlabel");
+    var line = el("div", "rlabel-line");
+    if (it.label_html && window.BeaconQ) window.BeaconQ.richInto(line, it.label_html, logicCtx(), it.label || "");
+    else line.appendChild(fmtNode(pipeText(it.label), it.fmt));
+    box.appendChild(line);
+    var m = it.media || (it.image ? { kind: "image", src: it.image } : null);
+    if (m && m.src) box.appendChild(renderMedia(m, "qmedia-sm"));
+    return box;
+  }
+  // The exclusive N/A on one row: ticking it clears the rating, rating clears the tick.
+  function naCell(q, key, label, onRate) {
+    var lab = el("label", "na-cell");
+    var cb = el("input"); cb.type = "checkbox";
+    cb.checked = (answers[q.id] || {})[key] === "NA";
+    cb.addEventListener("change", function () {
+      setAns(q.id, key, cb.checked ? "NA" : "");
+      if (onRate) onRate(cb.checked);
+      hideErr(); ansChanged();
+    });
+    lab.appendChild(cb);
+    lab.appendChild(el("span", null, label));
+    return lab;
+  }
+  function commentBox(qid, key, mode, placeholder) {
+    var ta = el("textarea", "cmt-box" + (mode === "require" ? " req" : ""));
+    ta.rows = 2;
+    ta.placeholder = placeholder || "Add a comment";
+    ta.value = getAns(qid, key) || "";
+    ta.addEventListener("input", function () { setAns(qid, key, ta.value); if (ta.value.trim()) hideErr(); });
+    return ta;
+  }
+  // One comment box under a row, spanning the whole grid.
+  function gridCommentRow(q, r, span) {
+    var row = el("div", "grid-row grid-cmtrow");
+    var ta = commentBox(q.id, "c_" + r.code, r.comment,
+      "Comment on " + pipeText(r.label) + (r.comment === "require" ? " (required)" : ""));
+    if (span) ta.dataset.span = String(span);
+    row.appendChild(ta);
+    return row;
+  }
+  function questionComment(q) {
+    var c = q.comments || {}, box = el("div", "q-comment");
+    box.appendChild(el("label", "q-comment-lbl", pipeText(c.label || "Any other comments?") +
+      (c.mode === "require" ? " *" : "")));
+    box.appendChild(commentBox(q.id, "_comment", c.mode, c.label || "Any other comments?"));
+    return box;
+  }
+  // The header: the row group name on the left, one caption per column on the right.
+  function gridHead(q, pts, extra) {
+    var g = q.grid || {}, na = q.na || {};
+    var head = el("div", "grid-row grid-head");
+    head.appendChild(el("div", "rlabel grid-rowname", pipeText(g.row_label || "")));
+    var cells = el("div", "grid-cells");
+    if (g.col_label) cells.appendChild(el("div", "grid-colname", pipeText(g.col_label)));
+    var strip = el("div", "grid-plabels");
+    pts.forEach(function (p) {
+      var c = el("div", "grid-plabel");
+      if (p.label) c.appendChild(fmtNode(pipeText(p.label), p.fmt));
+      if (p.tip) c.title = p.tip;
+      if (p.media && p.media.src) c.appendChild(renderMedia(p.media, "qmedia-xs"));
+      strip.appendChild(c);
+    });
+    if (extra) extra(strip);
+    cells.appendChild(strip);
+    head.appendChild(cells);
+    return head;
+  }
+
+  function renderScale(min, max, val, onPick, pts) {
     var box = el("div", "spectrum");
     box.setAttribute("role", "slider");
     box.setAttribute("aria-valuemin", String(min));
@@ -939,6 +1219,19 @@
       d.style.left = pct(v) + "%";
       track.appendChild(d);
       detents.push(d);
+    }
+    // one caption per scale point, sitting under the matching detent
+    if (pts && pts.some(function (p) { return p.label || (p.media && p.media.src); })) {
+      var labs = el("div", "sp-labels");
+      pts.forEach(function (p) {
+        var c = el("div", "sp-label");
+        c.style.left = pct(p.v) + "%";
+        if (p.label) c.appendChild(fmtNode(pipeText(p.label), p.fmt));
+        if (p.media && p.media.src) c.appendChild(renderMedia(p.media, "qmedia-xs"));
+        labs.appendChild(c);
+      });
+      box.appendChild(labs);
+      box.classList.add("has-labels");
     }
     var bubble = el("div", "sp-bubble", val === undefined ? "tap or drag" : String(val));
     var thumb = el("button", "sp-thumb" + (val === undefined ? " idle" : ""));
@@ -1006,26 +1299,89 @@
     if (q.min) input.min = q.min;
     if (q.max) input.max = q.max;
     input.value = a._ || "";
-    input.addEventListener("change", function () { setAns(q.id, "_", input.value); hideErr(); });
+    input.addEventListener("change", function () { setAns(q.id, "_", input.value); hideErr(); ansChanged(); });
     wrap.appendChild(input);
     return wrap;
   }
 
+  // A numeric matrix: one number box per row, or a whole table of them once it has columns.
+  function numInput(q, key, onType) {
+    var inp = el("input", "nm-input");
+    inp.type = "number";
+    if (q.min !== undefined) inp.min = q.min;
+    if (q.max !== undefined) inp.max = q.max;
+    if (q.step !== undefined) inp.step = q.step;
+    var v = (answers[q.id] || {})[key];
+    if (v !== undefined && v !== "" && v !== "NA") inp.value = v;
+    inp.addEventListener("input", function () {
+      setAns(q.id, key, inp.value);
+      if (onType) onType();
+      hideErr(); ansChanged();
+    });
+    return inp;
+  }
   function renderNumMatrix(q) {
     var wrap = el("div", "nummatrix");
-    (q.rows || []).forEach(function (r) {
-      var row = el("div", "nm-row");
-      var lbl = el("div", "nm-label"); lbl.textContent = r.label;
-      var inp = el("input", ""); inp.type = "number";
-      if (q.min !== undefined) inp.min = q.min;
-      if (q.max !== undefined) inp.max = q.max;
-      if (q.step !== undefined) inp.step = q.step;
-      var a = answers[q.id] || {};
-      if (a[r.code] !== undefined && a[r.code] !== "") inp.value = a[r.code];
-      inp.addEventListener("input", function () { setAns(q.id, r.code, inp.value); hideErr(); });
-      row.appendChild(lbl); row.appendChild(inp);
-      wrap.appendChild(row);
-    });
+    var g = q.grid || {}, na = q.na || {}, naLabel = na.label || "N/A";
+    var cols = orderedList(q.cols || [], q, "cols");
+    var anyNa = na.rows || na.col;
+    if (g.title) wrap.appendChild(el("div", "grid-title", pipeText(g.title)));
+    if (!cols.length) {                                   // one number box per row, as always
+      orderedList(q.rows || [], q, "rows").forEach(function (r) {
+        var row = el("div", "nm-row");
+        row.appendChild(itemLabelNode(r, "nm-label"));
+        row.appendChild(numInput(q, r.code));
+        if (anyNa) row.appendChild(naCell(q, r.code, naLabel, null));
+        wrap.appendChild(row);
+        if (r.comment && r.comment !== "none") {
+          wrap.appendChild(commentBox(q.id, "c_" + r.code, r.comment, "Comment on " + pipeText(r.label)));
+        }
+      });
+    } else {                                              // rows x columns
+      var tbl = el("div", "nm-table");
+      tbl.style.setProperty("--nm-cols", "minmax(140px,1.6fr) repeat(" + cols.length + ", minmax(110px,1fr))" + (anyNa ? " 74px" : ""));
+      var head = el("div", "nm-tr nm-head");
+      head.appendChild(el("div", "nm-th nm-corner", pipeText(g.row_label || "")));
+      cols.forEach(function (c) { head.appendChild(itemLabelNode(c, "nm-th")); });
+      if (anyNa) head.appendChild(el("div", "nm-th nm-th-na", naLabel));
+      tbl.appendChild(head);
+      orderedList(q.rows || [], q, "rows").forEach(function (r) {
+        var row = el("div", "nm-tr");
+        row.appendChild(itemLabelNode(r, "nm-th nm-rowlabel"));
+        // typing into any cell of the row lifts an N/A tick on that row
+        var clearNa = (function (rowEl, rowCode) {
+          return function () {
+            if ((answers[q.id] || {})[rowCode] !== "NA") return;
+            setAns(q.id, rowCode, "");
+            var nb = rowEl.querySelector(".na-cell input");
+            if (nb) nb.checked = false;
+          };
+        })(row, r.code);
+        cols.forEach(function (c) {
+          var cell = el("div", "nm-td");
+          cell.appendChild(numInput(q, r.code + "_" + c.code, clearNa));
+          row.appendChild(cell);
+        });
+        if (anyNa) {
+          var nc = el("div", "nm-td nm-td-na");
+          // N/A stands in for the whole row: ticking it empties the cells
+          nc.appendChild(naCell(q, r.code, naLabel, function (checked) {
+            if (!checked) return;
+            cols.forEach(function (c) { setAns(q.id, r.code + "_" + c.code, ""); });
+            row.querySelectorAll(".nm-input").forEach(function (ni) { ni.value = ""; });
+          }));
+          row.appendChild(nc);
+        }
+        tbl.appendChild(row);
+        if (r.comment && r.comment !== "none") {
+          var crow = el("div", "nm-tr nm-cmtrow");
+          crow.appendChild(commentBox(q.id, "c_" + r.code, r.comment, "Comment on " + pipeText(r.label)));
+          tbl.appendChild(crow);
+        }
+      });
+      wrap.appendChild(tbl);
+    }
+    if ((q.comments || {}).mode && q.comments.mode !== "none") wrap.appendChild(questionComment(q));
     return wrap;
   }
 
@@ -1044,7 +1400,7 @@
       var d = NaN;
       if (before.value !== "" && after.value !== "") d = parseFloat(after.value) - parseFloat(before.value);
       setAns(q.id, "delta", isFinite(d) ? d : "");
-      paint(); hideErr();
+      paint(); hideErr(); ansChanged();
     }
     function cell(label, node, val) {
       var box = el("div", "delta-cell");
@@ -1119,32 +1475,249 @@
     return wrap;
   }
 
-  function renderGrid(q, semantic) {
-    var wrap = el("div", "grid");
-    orderedList(q.rows, q).forEach(function (r) {
-      var row = el("div", "grid-row");
-      var left = el("div", "rlabel");
-      if (semantic) { var b = el("strong"); b.textContent = pipeText(r.label); left.appendChild(b); }
-      else left.textContent = pipeText(r.label);
-      var right = el("div");
-      if (semantic) {
-        right.style.cssText = "display:flex;align-items:center;gap:9px";
-        right.appendChild(el("span", "sem-left", String(r.left)));
+  // A choice grid: rows x columns, and every row picks one column (single select) or
+  // several of them (multi select).  One value per row is stored - the column's code.
+  function renderChoiceGrid(q) {
+    var wrap = el("div", "grid choice-grid");
+    var g = q.grid || {}, na = q.na || {}, naLabel = na.label || "N/A";
+    var multi = q.select === "multi";
+    var cols = orderedList(q.cols || [], q, "cols");
+    var rows = orderedList(q.rows || [], q, "rows");
+    wrap.style.setProperty("--cg-tmpl", "minmax(140px, 1.4fr) repeat(" + cols.length +
+      ", minmax(44px, 1fr))" + (na.rows ? " minmax(64px, auto)" : ""));
+    if (g.title) wrap.appendChild(el("div", "grid-title", pipeText(g.title)));
+
+    var head = el("div", "cg-row cg-head");
+    head.appendChild(el("div", "cg-corner", pipeText(g.row_label || "")));
+    cols.forEach(function (c) { head.appendChild(itemLabelNode(c, "cg-col")); });
+    if (na.rows) head.appendChild(el("div", "cg-col cg-col-na", ""));
+    wrap.appendChild(head);
+
+    rows.forEach(function (r) {
+      var row = el("div", "cg-row");
+      row.appendChild(itemLabelNode(r, "rlabel cg-rlabel"));
+      var cur = (answers[q.id] || {})[r.code];
+      var on = Array.isArray(cur) ? cur.map(String) : (cur === undefined || cur === "" ? [] : [String(cur)]);
+      var isNa = cur === "NA";
+      cols.forEach(function (c) {
+        var cell = el("label", "cg-cell");
+        var inp = el("input");
+        inp.type = multi ? "checkbox" : "radio";
+        inp.name = q.id + "_" + r.code;
+        inp.checked = !isNa && on.indexOf(String(c.code)) >= 0;
+        inp.addEventListener("change", function () {
+          if (multi) {
+            var have = getAns(q.id, r.code);
+            have = Array.isArray(have) ? have.map(String) : [];
+            var at = have.indexOf(String(c.code));
+            if (inp.checked && at < 0) have.push(c.code);
+            if (!inp.checked && at >= 0) have.splice(at, 1);
+            setAns(q.id, r.code, have);
+          } else {
+            setAns(q.id, r.code, c.code);
+          }
+          var tick = row.querySelector(".cg-na input"); if (tick) tick.checked = false;
+          if (inp.checked) bullseye(cell);
+          hideErr(); ansChanged(); checkPattern(q, wrap);
+        });
+        cell.appendChild(inp);
+        if (c.media && c.media.src) cell.title = pipeText(c.label);
+        row.appendChild(cell);
+      });
+      if (na.rows) {
+        var holder = el("div", "cg-cell cg-na");
+        var nl = el("label", "na-cell");
+        var ncb = el("input"); ncb.type = "checkbox";
+        ncb.checked = isNa;
+        ncb.addEventListener("change", function () {
+          setAns(q.id, r.code, ncb.checked ? "NA" : "");
+          Array.prototype.forEach.call(row.querySelectorAll(".cg-cell input"), function (x) {
+            if (x !== ncb) x.checked = false;              // N/A clears every pick on the row
+          });
+          hideErr(); ansChanged();
+        });
+        nl.appendChild(ncb);
+        nl.appendChild(el("span", null, naLabel));
+        holder.appendChild(nl);
+        row.appendChild(holder);
       }
-      right.appendChild(renderScale(q.scale.min, q.scale.max, getAns(q.id, r.code), function (v) {
-        setAns(q.id, r.code, v); hideErr();
-        checkPattern(q, wrap);
-      }));
-      if (semantic) right.appendChild(el("span", "sem-right", String(r.right)));
-      row.appendChild(left); row.appendChild(right);
+      wrap.appendChild(row);
+      if (r.comment && r.comment !== "none") wrap.appendChild(gridCommentRow(q, r, cols.length + 1));
+    });
+    if ((q.comments || {}).mode && q.comments.mode !== "none") wrap.appendChild(questionComment(q));
+    return wrap;
+  }
+
+  function renderGrid(q, semantic) {
+    if (q.cols && q.cols.length && !semantic) return renderChoiceGrid(q);   // rows x columns
+    var wrap = el("div", "grid");
+    var g = q.grid || {}, na = q.na || {}, naLabel = na.label || "N/A";
+    var sc = q.scale || {}, min = sc.min != null ? Number(sc.min) : 1;
+    var max = sc.max != null ? Number(sc.max) : 5;
+    var pts = orderedList(scalePointsOf(q), q, "cols");
+    if (g.title) wrap.appendChild(el("div", "grid-title", pipeText(g.title)));
+    if (g.row_label || g.col_label || na.col || pts.some(function (p) { return p.label; })) {
+      wrap.appendChild(gridHead(q, pts, na.col ? function (strip) {
+        strip.appendChild(el("div", "grid-plabel grid-plabel-na", naLabel));
+      } : null));
+    }
+    orderedList(q.rows || [], q, "rows").forEach(function (r) {
+      var row = el("div", "grid-row");
+      row.appendChild(itemLabelNode(r, "rlabel"));
+      var cells = el("div", "grid-cells");
+      if (semantic) {
+        cells.style.cssText = "display:flex;align-items:center;gap:9px";
+        cells.appendChild(el("span", "sem-left", String(r.left || "")));
+      }
+      var naTick = null;
+      cells.appendChild(renderScale(min, max, getAns(q.id, r.code), function (v) {
+        setAns(q.id, r.code, v);
+        if (naTick) naTick.checked = false;              // a rating clears the N/A
+        hideErr(); ansChanged(); checkPattern(q, wrap);
+      }, pts));
+      if (semantic) cells.appendChild(el("span", "sem-right", String(r.right || "")));
+      if (na.rows || na.col) {
+        var holder = el("div", "grid-nacell"), cell = naCell(q, r.code, naLabel, null);
+        naTick = cell.querySelector("input");
+        holder.appendChild(cell); cells.appendChild(holder);
+      }
+      row.appendChild(cells);
+      wrap.appendChild(row);
+      if (r.comment && r.comment !== "none") wrap.appendChild(gridCommentRow(q, r));
+    });
+    var allLabelled = pts.length && pts.every(function (p) { return p.label; });
+    if (!allLabelled || sc.min_label || sc.max_label) {
+      var ends = el("div", "scale-ends");
+      ends.appendChild(el("span", null, String(sc.min_label || (pts[0] || {}).label || min)));
+      ends.appendChild(el("span", null, String(sc.max_label || (pts[pts.length - 1] || {}).label || max)));
+      wrap.appendChild(ends);
+    }
+    if ((q.comments || {}).mode && q.comments.mode !== "none") wrap.appendChild(questionComment(q));
+    return wrap;
+  }
+
+  // A rating scale: rows rated on one scale, labelled at the low end, the middle and the
+  // high end.  The three anchor labels sit under the scale once, below all the rows.
+  function renderRatingScale(q) {
+    var wrap = el("div", "grid rating-scale");
+    var sc = q.scale || {}, min = sc.min != null ? Number(sc.min) : 1;
+    var max = sc.max != null ? Number(sc.max) : 5;
+    orderedList(q.rows || [], q, "rows").forEach(function (r) {
+      var row = el("div", "grid-row");
+      row.appendChild(itemLabelNode(r, "rlabel"));
+      var cells = el("div", "grid-cells");
+      cells.appendChild(renderScale(min, max, getAns(q.id, r.code), function (v) {
+        setAns(q.id, r.code, v);
+        hideErr(); ansChanged(); checkPattern(q, wrap);
+      }, null));
+      row.appendChild(cells);
       wrap.appendChild(row);
     });
-    var ends = el("div", "scale-ends");
-    ends.appendChild(el("span", null, String(q.scale.min_label || q.scale.min)));
-    ends.appendChild(el("span", null, String(q.scale.max_label || q.scale.max)));
+    var ends = el("div", "scale-ends rs-ends");
+    ends.appendChild(el("span", "rs-end-low", pipeText(sc.min_label) || String(min)));
+    if (sc.mid_label) ends.appendChild(el("span", "rs-end-mid", pipeText(sc.mid_label)));
+    ends.appendChild(el("span", "rs-end-high", pipeText(sc.max_label) || String(max)));
     wrap.appendChild(ends);
     return wrap;
   }
+
+  // An emoji grid: the same shape as a rating grid, but each scale point is a face to tap.
+
+  function renderEmojiGrid(q) {
+    var wrap = el("div", "grid emoji-grid");
+    var g = q.grid || {}, na = q.na || {}, naLabel = na.label || "N/A";
+    var pts = orderedList(scalePointsOf(q), q, "cols");
+    if (g.title) wrap.appendChild(el("div", "grid-title", pipeText(g.title)));
+    if (g.row_label || g.col_label || na.col) {
+      wrap.appendChild(gridHead(q, pts, na.col ? function (strip) {
+        strip.appendChild(el("div", "grid-plabel grid-plabel-na", naLabel));
+      } : null));
+    }
+    orderedList(q.rows || [], q, "rows").forEach(function (r) {
+      var row = el("div", "grid-row");
+      row.appendChild(itemLabelNode(r, "rlabel"));
+      var cells = el("div", "grid-cells emoji-cells");
+      var faces = [];
+      pts.forEach(function (p) {
+        var b = el("button", "emoji-btn");
+        b.type = "button";
+        b.appendChild(el("span", "emoji-face", pipeText(p.label || String(p.v))));
+        if (p.media && p.media.src) b.appendChild(renderMedia(p.media, "qmedia-xs"));
+        if (p.tip) b.title = p.tip;
+        b.classList.toggle("on", String(getAns(q.id, r.code)) === String(p.v));
+        b.addEventListener("click", function () {
+          setAns(q.id, r.code, p.v);
+          faces.forEach(function (x) { x.classList.remove("on"); });
+          b.classList.add("on");
+          var tick = row.querySelector(".na-cell input"); if (tick) tick.checked = false;
+          hideErr(); ansChanged();
+        });
+        faces.push(b);
+        cells.appendChild(b);
+      });
+      if (na.rows || na.col) {
+        var holder = el("div", "grid-nacell");
+        holder.appendChild(naCell(q, r.code, naLabel, null));
+        cells.appendChild(holder);
+      }
+      row.appendChild(cells);
+      wrap.appendChild(row);
+      if (r.comment && r.comment !== "none") wrap.appendChild(gridCommentRow(q, r));
+    });
+    if ((q.comments || {}).mode && q.comments.mode !== "none") wrap.appendChild(questionComment(q));
+    return wrap;
+  }
+
+  // A heat map: rows x columns, tap a cell to raise how strongly it applies (0 - 3).
+
+  function renderHeatmap(q) {
+    var wrap = el("div", "heatmap");
+    var g = q.grid || {};
+    var cols = orderedList(q.cols || [], q, "cols");
+    if (g.title) wrap.appendChild(el("div", "grid-title", pipeText(g.title)));
+    var tbl = el("div", "hm-table");
+    tbl.style.setProperty("--hm-cols", "minmax(120px,1.5fr) repeat(" + cols.length + ", minmax(74px,1fr))");
+    var head = el("div", "hm-tr hm-head");
+    head.appendChild(el("div", "hm-th hm-corner", pipeText(g.row_label || "")));
+    cols.forEach(function (c) { head.appendChild(itemLabelNode(c, "hm-th")); });
+    tbl.appendChild(head);
+    orderedList(q.rows || [], q, "rows").forEach(function (r) {
+      var row = el("div", "hm-tr");
+      row.appendChild(itemLabelNode(r, "hm-th hm-rowlabel"));
+      cols.forEach(function (c) {
+        var key = r.code + "_" + c.code;
+        var lvl = Number((answers[q.id] || {})[key] || 0);
+        var cell = el("button", "hm-cell");
+        cell.type = "button";
+        cell.dataset.lvl = String(lvl);
+        cell.title = pipeText(r.label) + " \\u00D7 " + pipeText(c.label);
+        cell.setAttribute("aria-label", cell.title);
+        var mark = el("span", "hm-mark", lvl ? String(lvl) : "");
+        cell.appendChild(mark);
+        cell.addEventListener("click", function () {
+          var next = (Number(cell.dataset.lvl || 0) + 1) % 4;      // tap cycles 0 -> 1 -> 2 -> 3 -> 0
+          cell.dataset.lvl = String(next);
+          mark.textContent = next ? String(next) : "";
+          setAns(q.id, key, next || "");
+          hideErr(); ansChanged();
+        });
+        row.appendChild(cell);
+      });
+      tbl.appendChild(row);
+      if (r.comment && r.comment !== "none") {
+        var crow = el("div", "hm-tr hm-cmtrow");
+        crow.appendChild(commentBox(q.id, "c_" + r.code, r.comment, "Comment on " + pipeText(r.label)));
+        tbl.appendChild(crow);
+      }
+    });
+    wrap.appendChild(tbl);
+    wrap.appendChild(el("div", "hm-legend",
+      "Tap a cell once for weak, twice for moderate, three times for strong \\u00B7 tap again to clear."));
+    if ((q.comments || {}).mode && q.comments.mode !== "none") wrap.appendChild(questionComment(q));
+    return wrap;
+  }
+
+  // A numeric matrix: one number box per row, or a whole table of them once it has columns.
 
   // Gentle, in-the-moment nudge when every row carries the same rating.
   // Never blocks, never penalises - it just asks for a second look.
@@ -1183,13 +1756,14 @@
 
     orderedList(q.rows, q).forEach(function (r) {
       var row = el("div", "s100-row");
-      row.appendChild(el("div", "rlabel", null)).textContent = pipeText(r.label);
+      row.appendChild(itemLabelNode(r, "rlabel"));
       var inp = el("input");
       inp.type = "number"; inp.min = 0; inp.max = 100; inp.step = 1;
       var v = getAns(q.id, r.code);
       inp.value = (v === undefined) ? "" : v;
       inp.addEventListener("input", function () {
         setAns(q.id, r.code, inp.value === "" ? "" : parseInt(inp.value, 10));
+        ansChanged();
         recompute();
       });
       inputs.push(inp);
@@ -1214,7 +1788,7 @@
         var r = q.rows.filter(function (x) { return x.code === code; })[0];
         var item = el("div", "rank-item" + (i < top ? " top" : ""));
         item.appendChild(el("span", "pos", String(i + 1)));
-        item.appendChild(el("span", null, null)).textContent = pipeText(r.label);
+        item.appendChild(itemLabelNode(r, "rank-label"));
         var ar = el("div", "arrows");
         var up = el("button", null, "&#9650;"), dn = el("button", null, "&#9660;");
         up.type = dn.type = "button";
@@ -1226,6 +1800,7 @@
         wrap.appendChild(item);
       });
       setAns(q.id, "order", order.slice());
+      ansChanged();
       hideErr();
     }
     function move(i, d) {
@@ -1241,17 +1816,43 @@
   // ---- conjoint as cards, with a minimum dwell gate ----
   var ATTR_ICON = { OS: "\u23F3", PFS12: "\uD83D\uDCC8", AE: "\u26A0\uFE0F", ROUTE: "\uD83D\uDC89",
                     CDX: "\uD83E\uDDEC", COST: "\uD83D\uDCB2", ACCESS: "\uD83C\uDFE5" };
-  function attrLabel(id) {
-    return { OS: "Median OS vs standard of care", PFS12: "12-month PFS",
-             AE: "Grade 3+ adverse events", ROUTE: "Administration",
-             CDX: "Companion diagnostic", COST: "Net 12-month cost",
-             ACCESS: "Payer access at month 1" }[id] || id;
+  // The design may carry its own labels (an author-defined attribute); fall back to the
+  // wording the seeded BEACON instrument uses, then to the raw id.
+  var ATTR_LABEL = { OS: "Median OS vs standard of care", PFS12: "12-month PFS",
+                     AE: "Grade 3+ adverse events", ROUTE: "Administration",
+                     CDX: "Companion diagnostic", COST: "Net 12-month cost",
+                     ACCESS: "Payer access at month 1" };
+  function attrLabel(attr) {
+    var id = typeof attr === "string" ? attr : (attr && attr.id);
+    var own = typeof attr === "object" && attr && String(attr.label || "").trim();
+    if (own && own !== id) return own;
+    return ATTR_LABEL[id] || id;
   }
+  // A generated design stores tasks as a list; the seeded one keys them by task number.
+  function taskAt(tid) {
+    if (!CONJOINT || !CONJOINT.tasks) return [];
+    var t = CONJOINT.tasks;
+    if (Array.isArray(t)) return t[Number(tid)] || [];
+    return t[String(tid)] || [];
+  }
+  function taskIds() {
+    var t = (CONJOINT && CONJOINT.tasks) || [];
+    return Array.isArray(t) ? t.map(function (_, i) { return i; }) : Object.keys(t).map(Number);
+  }
+  // The level an alternative shows for one attribute. Designs store levels positionally
+  // (aligned to CONJOINT.attributes, null when a group-inclusion attribute is hidden in this
+  // task) or keyed by attribute id; both are read here so a design always renders.
+  function altLevel(alt, attr, ai) {
+    var lv = (alt && alt.levels) || alt || [];
+    if (!Array.isArray(lv) && typeof lv === "object") return lv[attr.id];
+    return lv[ai];
+  }
+  // kept in step with profile_levels() in core/conjoint.py
 
   function renderConjoint(step) {
     var q = step.q;
     var tid = step.taskId;
-    var alts = CONJOINT.tasks[String(tid)];
+    var alts = taskAt(tid);
     var positions = (SESSION.alt_positions && SESSION.alt_positions[String(tid)]) ||
                     [1, 2, 3];
     var chosen = getAns(q.id, "T" + tid);
@@ -1272,11 +1873,21 @@
 
       var rows = el("div", "alt-rows");
       CONJOINT.attributes.forEach(function (attr, ai) {
+        // a group-inclusion attribute is absent from some tasks - the design stores null for it
+        var lv = altLevel(alt, attr, ai);
+        if (lv === null || lv === undefined) return;
         var r = el("div", "alt-row");
         r.appendChild(el("span", "ico", ATTR_ICON[attr.id] || "\u2022"));
         var t = el("span", "txt");
-        t.appendChild(el("span", "lbl", attrLabel(attr.id)));
-        t.appendChild(document.createTextNode(attr.levels[alt.levels[ai]]));
+        t.appendChild(el("span", "lbl", attrLabel(attr)));
+        var val = (attr.levels || [])[lv];
+        var pic = (attr.images || [])[lv];
+        if (pic) {
+          var im = el("img", "alt-level-img");
+          im.src = pic; im.alt = "";
+          r.appendChild(im);
+        }
+        t.appendChild(document.createTextNode(val == null ? "" : String(val)));
         r.appendChild(t);
         rows.appendChild(r);
       });
@@ -1286,23 +1897,26 @@
         setAns(q.id, "T" + tid, altId);
         cards.querySelectorAll(".alt-card").forEach(function (c) { c.classList.remove("sel"); });
         card.classList.add("sel");
-        optout.classList.remove("sel");
+        if (optout) optout.classList.remove("sel");   // there is no opt-out card when Allow "none" is off
         hideErr();
       });
       cards.appendChild(card);
     });
     wrap.appendChild(cards);
 
-    var optout = el("div", "optout-card" + (String(chosen) === "0" ? " sel" : ""));
-    optout.appendChild(el("span", "alt-tick", "&#10003;"));
-    optout.appendChild(el("span", null, String(q.opt_out_label)));
-    optout.addEventListener("click", function () {
-      setAns(q.id, "T" + tid, 0);
-      optout.classList.add("sel");
-      cards.querySelectorAll(".alt-card").forEach(function (c) { c.classList.remove("sel"); });
-      hideErr();
-    });
-    wrap.appendChild(optout);
+    // "None of these" is only offered when the experiment allows it (Allow "none" in Studio)
+    if (CONJOINT.has_opt_out !== false) {
+      var optout = el("div", "optout-card" + (String(chosen) === "0" ? " sel" : ""));
+      optout.appendChild(el("span", "alt-tick", "&#10003;"));
+      optout.appendChild(el("span", null, String(q.opt_out_label || CONJOINT.none_label || "None of these")));
+      optout.addEventListener("click", function () {
+        setAns(q.id, "T" + tid, 0);
+        optout.classList.add("sel");
+        cards.querySelectorAll(".alt-card").forEach(function (c) { c.classList.remove("sel"); });
+        hideErr();
+      });
+      wrap.appendChild(optout);
+    }
 
     // dwell gate: the respondent must actually look at the profiles. Started by render()
     // after the nav exists, otherwise there is a brief window where Next is still clickable.
@@ -1331,7 +1945,7 @@
       var pct = Math.min(1, spent / MIN_DWELL);
       fg.style.strokeDashoffset = String(56.5 * (1 - pct));
       if (left > 0) {
-        txt.textContent = "Take a moment to weigh all seven characteristics \u2014 " +
+        txt.textContent = "Take a moment to weigh the options \u2014 " +
           Math.ceil(left) + "s before you can continue";
         node.classList.remove("done");
         lockNext(true);
@@ -1375,12 +1989,14 @@
     return h;
   }
 
-  function renderMedia(m) {
-    var box = el("div", "qmedia" + (m.align ? " qmedia-" + m.align : ""));
+  function renderMedia(m, cls) {
+    var box = el("div", "qmedia" + (cls ? " " + cls : "") + (m.align ? " qmedia-" + m.align : ""));
     var node;
     if (m.kind === "video") {
       node = el("video"); node.controls = true; node.src = m.src; node.preload = "metadata";
       if (m.autoplay) { node.autoplay = true; node.muted = true; }
+    } else if (m.kind === "audio") {
+      node = el("audio"); node.controls = true; node.src = m.src; node.preload = "metadata";
     } else {
       node = el("img"); node.src = m.src; node.alt = m.alt || "";
     }
@@ -1391,9 +2007,10 @@
   }
 
   function renderQuestion(q) {
-    var sec = sectionOf(q);
+    // Which section a question sits in (screeners, main, ...) is research-team information and
+    // is never shown to the respondent - not on the card, not in the progress strip. Section
+    // titles stay visible in the Studio outline, where the team needs them.
     var card = el("div", "card");
-    card.appendChild(el("span", "section-tag", String(sec.title)));
 
     if (q.comprehension) {
       card.appendChild(el("div", "cc-banner",
@@ -1416,12 +2033,15 @@
       case "multi_select": body = renderOptions(q, true); break;
       case "date": body = renderDate(q); break;
       case "numeric_matrix": body = renderNumMatrix(q); break;
+      case "heatmap": body = renderHeatmap(q); break;
+      case "emoji_grid": body = renderEmojiGrid(q); break;
       case "delta": body = renderDelta(q); break;
       case "concept_test": body = renderConceptTest(q); break;
       case "loop": body = renderLoop(q); break;
       case "text_block": body = renderTextBlock(q); break;
       case "rating_grid": body = renderGrid(q, false); break;
       case "semantic_diff": body = renderGrid(q, true); break;
+      case "rating_scale": body = renderRatingScale(q); break;
       case "sum_to_100": body = renderSum100(q); break;
       case "rank": body = renderRank(q); break;
       case "numeric": {
@@ -1432,7 +2052,7 @@
         var v = getAns(q.id, "_");
         inp.value = v === undefined ? "" : v;
         inp.addEventListener("input", function () {
-          setAns(q.id, "_", inp.value === "" ? "" : Number(inp.value)); hideErr();
+          setAns(q.id, "_", inp.value === "" ? "" : Number(inp.value)); hideErr(); ansChanged();
         });
         row.appendChild(inp);
         if (q.suffix) row.appendChild(el("span", "suf", String(q.suffix)));
@@ -1448,9 +2068,10 @@
         rng.type = "range"; rng.min = q.min; rng.max = q.max; rng.step = q.step || 1;
         rng.value = val;
         setAns(q.id, "_", Number(val));
+        ansChanged();
         rng.addEventListener("input", function () {
           out.textContent = rng.value + (q.suffix || "");
-          setAns(q.id, "_", Number(rng.value)); hideErr();
+          setAns(q.id, "_", Number(rng.value)); hideErr(); ansChanged();
         });
         var ends = el("div", "slider-ends");
         ends.appendChild(el("span", null, String(q.min_label || q.min)));
@@ -1518,6 +2139,27 @@
   function showErr(msg) { var e = $(PREVIEW ? ".prev-err" : "#err"); if (e) { e.textContent = msg; e.classList.add("show"); } }
   function hideErr() { var e = $(PREVIEW ? ".prev-err" : "#err"); if (e) e.classList.remove("show"); }
 
+  // A comment box can be required outright, required when named rows are answered, or
+  // required on a row of its own.  Nothing else is blocked - only the box itself.
+  function missingComment(q) {
+    var a = answers[q.id] || {}, c = q.comments || {}, need = [];
+    function blank(v) { return !String(v || "").trim(); }
+    var wanted = c.mode === "require";
+    if (!wanted && (c.require_when || []).length) {
+      wanted = (c.require_when || []).some(function (code) {
+        var v = a[code];
+        return v !== undefined && v !== "" && v !== "NA";
+      });
+    }
+    if (wanted && blank(a._comment)) return "Please add a comment before continuing.";
+    (q.rows || []).forEach(function (r) {
+      if (a[r.code] === "NA") return;               // N/A rows carry nothing to comment on
+      if (r.comment === "require" && blank(a["c_" + r.code])) need.push(pipeText(r.label));
+    });
+    if (need.length) return "Please add a comment for " + need.join(", ") + ".";
+    return null;
+  }
+
   function validateStep() {
     var st = steps[cur];
     if (st.kind === "task") {
@@ -1526,7 +2168,7 @@
         return false;
       }
       if (dwellTimer) {
-        showErr("Please take a moment to review all seven characteristics before continuing.");
+        showErr("Please take a moment to review the options before continuing.");
         return false;
       }
       return true;
@@ -1548,15 +2190,22 @@
       }
     }
     if (q.type === "numeric_matrix") {
-      var na = answers[q.id] || {};
-      for (var ri = 0; ri < (q.rows || []).length; ri++) {
-        var rr = q.rows[ri], rv = na[rr.code];
-        if (rv === undefined || rv === "") continue;
-        if (!isNum(rv)) { showErr(rr.label + ": please enter a number."); return false; }
-        if (q.min !== undefined && parseFloat(rv) < q.min) { showErr(rr.label + " must be at least " + q.min + "."); return false; }
-        if (q.max !== undefined && parseFloat(rv) > q.max) { showErr(rr.label + " must be at most " + q.max + "."); return false; }
+      var na = answers[q.id] || {}, nmCells = [], nmCols = q.cols || [];
+      (q.rows || []).forEach(function (rr) {
+        if (nmCols.length) nmCols.forEach(function (cc) {
+          nmCells.push([rr.label + " \u00D7 " + cc.label, rr.code + "_" + cc.code]); });
+        else nmCells.push([rr.label, rr.code]);
+      });
+      for (var ri = 0; ri < nmCells.length; ri++) {
+        var rv = na[nmCells[ri][1]], rname = nmCells[ri][0];
+        if (rv === undefined || rv === "" || rv === "NA") continue;
+        if (!isNum(rv)) { showErr(rname + ": please enter a number."); return false; }
+        if (q.min !== undefined && parseFloat(rv) < q.min) { showErr(rname + " must be at least " + q.min + "."); return false; }
+        if (q.max !== undefined && parseFloat(rv) > q.max) { showErr(rname + " must be at most " + q.max + "."); return false; }
       }
     }
+    var cmtErr = missingComment(q);
+    if (cmtErr) { showErr(cmtErr); return false; }
     if (q.type === "delta") {
       var da = answers[q.id] || {}, need = ["before", "after"];
       for (var di = 0; di < 2; di++) {
@@ -1592,33 +2241,53 @@
   }
 
   // ============================================================ screening
-  function screenOut(reason) {
+  // Screening is data, never code: every question can carry its own screen-in /
+  // screen-out rules (see BeaconQ.screening in qlogic.js).  Nothing about a study's
+  // quotas is hard-coded here any more - the rules travel with the questionnaire.
+  function screenOut(v) {
     stopNarration();
-    save({ screened_out: true, screen_out_reason: reason, screen_out_at: steps[cur].q.id });
+    var qid = v.qid || (steps[cur] && steps[cur].q.id) || "";
+    save({ screened_out: true, screen_out_reason: v.reason, screen_out_at: qid });
     var card = el("div", "card");
     card.appendChild(el("div", "done-icon stop", "&#10005;"));
     card.appendChild(el("h1", null, "End of survey"));
-    card.appendChild(el("p", null, String(SPEC.terminate_text)));
-    card.appendChild(el("div", "summary", "Screened out at <code>" + steps[cur].q.id +
+    card.appendChild(el("p", null, String(v.message || SPEC.terminate_text)));
+    card.appendChild(el("div", "summary", "Screened out at <code>" + qid +
       "</code> &middot; reference <code>" + SESSION.respondent_code + "</code>"));
     show(card, true);
+    setAnswering(false);                           // project bar returns on the closing screen
     $("#progress-wrap").style.display = "none";
     $("#hud").hidden = true;
     $("#tpp-panel").hidden = true;
   }
 
-  function checkTerminate() {
-    var q1 = Number(getAns("Q1", "_"));
-    var q3 = Number(getAns("Q3", "_"));
-    var q4 = Number(getAns("Q4", "_"));
-    if ([5, 6, 7, 8].indexOf(q1) >= 0) return "Specialty not eligible (Q1=" + q1 + ")";
-    if (q1 === 4 && q3 && q3 < 10) return "Hematology-only with fewer than 10 eligible patients/month";
-    if (steps[cur].q.id === "Q3" && q3 < 5) return "Fewer than 5 eligible patients per month";
-    if ([3, 4, 5].indexOf(q4) >= 0) return "Industry conflict or recent oncology research (Q4=" + q4 + ")";
-    return null;
+  // Evaluate every screening rule in the study.  phase "live" only looks at the rules
+  // marked to fire the moment they match; the Next button checks everything.
+  function evaluateScreening(phase) {
+    if (!window.BeaconQ || !window.BeaconQ.screeningVerdict) return null;
+    // questions, not steps: every conjoint task belongs to the same question
+    var idx = SPEC.questions.indexOf(steps[cur].q);
+    return window.BeaconQ.screeningVerdict(
+      SPEC.questions, answers,
+      { phase: phase, upto: idx < 0 ? SPEC.questions.length - 1 : idx });
   }
+  function screeningHit(phase) {
+    if (window.BEACON_PREVIEW_MODE) return null;   // the Studio test view never ends the survey
+    var v = evaluateScreening(phase);
+    if (v) screenOut(v);
+    return v;
+  }
+  // Fires after every answer the respondent gives.  Rules set to "as soon as it matches"
+  // end the survey there and then; the rest wait for Next.
+  function ansChanged() { return screeningHit("live"); }
 
   // ============================================================ navigation
+  // ============================================================ respondent chrome
+  // The project information (brand, study name, respondent code, timer), the gamification HUD and
+  // the progress strip are shown on the welcome and closing screens only.  They are hidden for as
+  // long as a question is on screen, so nothing competes with it.  See `.answering` in survey.css.
+  function setAnswering(on) { document.body.classList.toggle("answering", !!on); }
+
   function show(node, replace) {
     var app = $("#app");
     app.innerHTML = "";
@@ -1633,7 +2302,21 @@
       var fwd = el("button", "btn primary", last ? "Submit survey" : "Next &rarr;");
       fwd.type = "button";
       fwd.addEventListener("click", next);
-      nav.appendChild(back); nav.appendChild(fwd);
+      nav.appendChild(back);
+      if (IS_TEST) {
+        var jumpWrap = el("label", "test-jump-inline");
+        jumpWrap.innerHTML = '<span>Jump to</span>';
+        var jump = el("select"); jump.setAttribute("aria-label", "Jump to any survey question");
+        steps.forEach(function (s, i) {
+          var o = document.createElement("option"), done = answers[s.q.id] && Object.keys(answers[s.q.id]).some(function(k){ return k.charAt(0) !== "_"; });
+          o.value = i; o.selected = i === cur;
+          o.textContent = (done ? "✓ " : "") + s.q.id + " · " + String(s.q.stem || "Choice task").slice(0, 46);
+          jump.appendChild(o);
+        });
+        jump.addEventListener("change", function () { save(); go(Number(this.value)); });
+        jumpWrap.appendChild(jump); nav.appendChild(jumpWrap);
+      }
+      nav.appendChild(fwd);
       app.appendChild(nav);
       var err = el("div", "err"); err.id = "err";
       app.appendChild(err);
@@ -1681,8 +2364,45 @@
     return chip;
   }
 
+  function renderTestConsole() {
+    if (!IS_TEST) return;
+    var box = document.getElementById("test-console"); if (!box || !steps.length) return;
+    box.hidden = false;
+    var opts = steps.map(function(s,i){ var done = answers[s.q.id] && Object.keys(answers[s.q.id]).some(function(k){return k.charAt(0)!=='_';}); return '<option value="'+i+'"'+(i===cur?' selected':'')+'>'+ (done?'✓ ':'') + escHtml(s.q.id + ' · ' + String(s.q.stem || 'Choice task').slice(0,55)) + '</option>';}).join('');
+    var qid = steps[cur].q.id;
+    // screening: the rules on this question and what they do to this respondent right now
+    var scrBits = "";
+    if (window.BeaconQ && window.BeaconQ.screenSummary) {
+      var scrLines = window.BeaconQ.screenSummary(steps[cur].q, SPEC.questions);
+      if (scrLines.length) {
+        var scrV = window.BeaconQ.screeningVerdict(SPEC.questions, answers,
+                     { upto: SPEC.questions.indexOf(steps[cur].q) });
+        scrBits = '<div class="tc-screen"><b>Screening</b>' + scrLines.map(function (l) {
+          return "<span>" + escHtml(l.text) + " <em>" + (l.when === "live" ? "on the spot" : "on Next") + "</em></span>";
+        }).join("") + "<i>" + (scrV
+          ? "This respondent would be screened out here - " + escHtml(scrV.reason)
+          : "This respondent continues.") + "</i></div>";
+      }
+    }
+    box.innerHTML = '<div class="tc-head"><b>Test workspace</b><span>Not shown to respondents</span><button id="tc-collapse">−</button></div><div class="tc-current">Reviewing <b>'+escHtml(qid)+'</b> · use <i>Jump to</i> beside Next to navigate</div>' + scrBits + '<div class="tc-actions"><button id="tc-ai">✦ AI fill test answers</button><a href="/studio/#'+encodeURIComponent(STUDY.slug)+'" target="_blank">Edit in Studio ↗</a></div><label>Review note for '+escHtml(qid)+'<textarea id="tc-note" placeholder="Describe an error, wording issue or logic discrepancy…">'+escHtml(testNotes[qid] || '')+'</textarea></label><button class="tc-save" id="tc-share">Save notes & copy review link</button><small id="tc-state">The link preserves answers, position and notes for your team.</small>';
+    $("#tc-note").oninput=function(){ testNotes[qid]=this.value; store('test_notes',testNotes); };
+    $("#tc-ai").onclick=aiFillTest;
+    $("#tc-share").onclick=saveTestReview;
+    $("#tc-collapse").onclick=function(){box.classList.toggle('collapsed'); this.textContent=box.classList.contains('collapsed')?'+':'−';};
+  }
+  function escHtml(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function aiFillTest(){
+    steps.forEach(function(s){ var q=s.q, a=answers[q.id]=answers[q.id]||{}; if(q.options&&q.options.length)a._=String(q.options[0].code); else if(q.type==='open_text')a._='Test response generated for survey validation only.'; else if(q.type==='numeric'||q.type==='slider'||q.type==='nps')a._=q.min||5; else if(q.rows)(q.rows||[]).forEach(function(r){a[r.code]=(q.scale&&q.scale.min)||1;}); });
+    store('answers',answers); save(); render(); toastTest('AI populated test-only sample answers. Review before using navigation.');
+  }
+  function toastTest(msg){var s=$("#tc-state");if(s)s.textContent=msg;}
+  function saveTestReview(){
+    fetch('/api/test-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({study:STUDY.slug,token:reviewToken,answers:answers,notes:testNotes,current:cur})}).then(function(r){return r.json();}).then(function(d){reviewToken=d.token;var url=location.origin+d.url;if(navigator.clipboard)navigator.clipboard.writeText(url);toastTest('Review saved and share link copied: '+url);});
+  }
+
   function render() {
     var st = steps[cur];
+    setAnswering(true);
     stopNarration();
     pendingDwell = null;
     if (dwellTimer) { clearInterval(dwellTimer); dwellTimer = null; }
@@ -1694,13 +2414,12 @@
       if (stemH) node.insertBefore(chip, stemH); else node.appendChild(chip);
     }
     show(node);
+    renderTestConsole();
+    if (audioPref === "all" && soundOn) setTimeout(function(){ speak(st.kind === "task" ? taskSpeechText(st) : qSpeechText(st.q)); }, 250);
     if (pendingDwell) { startDwell(pendingDwell); pendingDwell = null; }
 
-    var pct = Math.round((cur / steps.length) * 100);
-    setProgress(pct);
-    $("#progress-label").innerHTML =
-      "<span>" + sectionOf(st.q).title + "</span><span>Step " + (cur + 1) + " of " +
-      steps.length + "</span>";
+    // the bar fills silently: no section name, no step counter next to it
+    setProgress(Math.round((cur / steps.length) * 100));
 
     var inTPP = st.q.section === "C" || st.q.section === "D";
     $("#tpp-panel").hidden = !inTPP;
@@ -1714,7 +2433,7 @@
     if (sec.id === "C") {
       // the product profile is shown as a narrated animation before any opinion is sought
       runExplainer(SCENES, function () {
-        if (SECTION_NARRATION[sec.id]) playClip(SECTION_NARRATION[sec.id]);
+        if (audioPref === "all" && SECTION_NARRATION[sec.id]) playClip(SECTION_NARRATION[sec.id]);
         coachSay("Keep the profile fresh in mind - the questions ahead refer back to it. " +
           "Replay it any time from the panel at the bottom right.", "info");
       });
@@ -1726,17 +2445,14 @@
       });
       return;
     }
-    if (SECTION_NARRATION[sec.id]) playClip(SECTION_NARRATION[sec.id]);
+    if (audioPref === "all" && SECTION_NARRATION[sec.id]) playClip(SECTION_NARRATION[sec.id]);
   }
 
   function onLeaveSection(prevSec, nextSec) {
     if (!prevSec || prevSec.id === nextSec.id) return;
-    var pts = SECTION_POINTS[prevSec.id] || 50;
-    // sections that open with a narrated walkthrough get the points without a second overlay,
-    // so the respondent is never shown two stacked modals
-    if (nextSec.id === "C" || nextSec.id === "D") { addPoints(pts); return; }
-    celebrate(prevSec.title || "Section complete",
-      "You have finished the " + prevSec.title.toLowerCase() + " section.", pts);
+    // The section bonus is still earned and the HUD still ticks up, but there is no between-section
+    // popup any more: once a section ends the respondent goes straight on to the next question.
+    addPoints(SECTION_POINTS[prevSec.id] || 50);
   }
 
   // show-if logic: a step is visible when its question's rules pass against current answers
@@ -1760,8 +2476,7 @@
 
   function next() {
     if (!validateStep()) return;
-    var reason = checkTerminate();
-    if (reason) return screenOut(reason);
+    if (screeningHit()) return;                // screen-out rules, both live and on-Next
 
     var prevSec = sectionOf(steps[cur].q);
     var nx = nextVisible(cur, 1);
@@ -1793,22 +2508,37 @@
         body: JSON.stringify({ session_id: SESSION.session_id, answers: answers, elapsed_seconds: secs })
       }).then(function (r) { return r.json(); }).then(function (res) {
         var card = el("div", "card");
-        card.appendChild(el("div", "done-icon", "&#10003;"));
+        card.appendChild(el("div", gamifyOn() ? "done-icon done-target" : "done-icon",
+          gamifyOn()
+            ? '<svg viewBox="0 0 72 72" aria-hidden="true">' +
+              '<circle cx="36" cy="36" r="32" fill="#e8f2f7"/>' +
+              '<circle cx="36" cy="36" r="22" fill="#fff" stroke="#12789e" stroke-width="3"/>' +
+              '<circle cx="36" cy="36" r="12.5" fill="#e8f2f7" stroke="#12789e" stroke-width="3"/>' +
+              '<circle cx="36" cy="36" r="4.5" fill="#0b4f6c"/>' +
+              '<path d="M36 36 L60 12" stroke="#0b4f6c" stroke-width="3.5" stroke-linecap="round"/>' +
+              '<path d="M60 12 l-9 2.2 M60 12 l-2.2 9" stroke="#0b4f6c" stroke-width="3.5" stroke-linecap="round"/>' +
+              '</svg>'
+            : "&#10003;"));
         card.appendChild(el("h1", null, SPEC.thanks_title || "Thank you"));
         card.appendChild(el("p", null, SPEC.thanks_text || "Your responses have been recorded. Thank you for the " +
           "time and clinical insight you have given this study."));
         var flags = res.flags || [];
         card.appendChild(el("div", "summary",
-          "Reference <code>" + res.respondent_code + "</code> &middot; " +
-          Math.round(secs / 60) + " min &middot; <strong>" + points +
-          "</strong> insight points &middot; quality control: <code>" +
-          (flags.length ? flags.join(", ") : "clean") + "</code>"));
+          gamifyOn()
+            ? "Reference <code>" + res.respondent_code + "</code> &middot; " +
+              Math.round(secs / 60) + " min &middot; <strong>" + points +
+              "</strong> insight points &middot; rank <strong>" + rankFor(points) +
+              "</strong> &middot; quality control: <code>" +
+              (flags.length ? flags.join(", ") : "clean") + "</code>"
+            : "Reference <code>" + res.respondent_code + "</code> &middot; " +
+              Math.round(secs / 60) + " min"));
         if (flags.indexOf("ai_generated_verbatim") >= 0) {
           card.appendChild(el("div", "ai-note",
             "One or more written answers were flagged as possibly AI-generated. They stay on " +
             "your record marked for review - the rest of your answers are unaffected."));
         }
         show(card, true);
+        setAnswering(false);                     // project bar returns on the closing screen
         $("#progress-wrap").style.display = "none";
         $("#hud").hidden = true;
         $("#tpp-panel").hidden = true;
@@ -2019,14 +2749,34 @@
       CONJOINT = spec.conjoint;
       NARR = spec.narration;
       SCENES = spec.explainer_scenes;
-      MIN_DWELL = spec.conjoint_min_dwell || 12;
+      document.body.classList.toggle("gamified", gamifyOn());
+      // 0 is a valid setting (no gate) - only an absent value falls back to the default
+      MIN_DWELL = spec.conjoint_min_dwell === undefined || spec.conjoint_min_dwell === null
+                  ? 12 : Number(spec.conjoint_min_dwell);
       window.BEACON_CONJOINT_SCENE = spec.conjoint_scene;
 
-      setSound(recall("sound") !== false);
+      // Default is silent; a previous explicit preference may be restored.
+      audioPref = recall("audio_pref") || "manual";
+      setSound(audioPref !== "off" && recall("sound") === true);
       $("#sound-btn").addEventListener("click", function () {
         setSound(!soundOn);
         if (soundOn && $("#welcome") && $("#welcome").parentElement) playClip("welcome");
       });
+
+      // Voice answering is always listed on the welcome page, so respondents can see it.  Where the
+      // browser has no speech recognition the option stays there, disabled, with the reason given.
+      var vRadio = document.querySelector('input[name="voice-pref"][value="voice"]');
+      if (vRadio && !voiceSupported()) {
+        vRadio.disabled = true;
+        if (vRadio.closest("label")) vRadio.closest("label").classList.add("is-off");
+        var vnote = $(".voice-note");
+        if (vnote) vnote.textContent = "Not available in this browser. Open this survey in Chrome, Edge or Safari to answer by voice.";
+      }
+      var vb = $("#voice-btn");
+      if (vb && voiceSupported()) {
+        vb.hidden = false;
+        vb.addEventListener("click", function () { setVoice(!voiceOn); });
+      }
       wireWelcomeAudio();
       setupLangPicker();
       applyWelcomeCopy();
@@ -2046,7 +2796,11 @@
                       task_order: prog.task_order, alt_positions: prog.alt_positions };
           answers = prog.answers || {};
           if (prog.elapsed_seconds) t0 = Date.now() - prog.elapsed_seconds * 1000;
-          afterSession(false);
+          // Nothing answered yet: show the welcome page again so the choice of how to answer
+          // (tap or voice) is offered before Q1.  The saved session itself is kept.
+          afterSession(Object.keys(answers).length === 0);
+        } else if (STUDY.paused) {
+          showPaused();                      // nobody new starts while the study is paused
         } else {
           startFresh();
         }
@@ -2080,6 +2834,12 @@
                              language: SPEC.render_language || LANG || "",
                              embedded: readEmbedded() })
     }).then(function (r) { return r.json(); }).then(function (s) {
+      if (s && s.paused) { showPaused(); return; }
+      if (!s || !s.session_id) {
+        $("#app").innerHTML = '<div class="card"><h1>Unable to start</h1><p>' +
+          (s && s.error ? s.error : "The survey could not be started. Please reload.") + "</p></div>";
+        return;
+      }
       SESSION = s;
       answers = {};
       store("session_id", s.session_id);
@@ -2087,8 +2847,27 @@
     });
   }
 
+  // A paused study keeps its door closed to new respondents, but someone already answering
+  // can reload this page and resume from their saved progress.
+  function showPaused() {
+    document.body.classList.remove("answering");
+    $("#app").innerHTML =
+      '<div class="card paused-card"><h1>This study is paused</h1>' +
+      "<p>The research team has temporarily stopped new responses. Thank you for your interest - " +
+      "please try again later.</p>" +
+      '<p class="paused-resume">Already taking part? <a href="' + location.pathname +
+      '">Continue where you left off</a>.</p>' +
+      '<p class="paused-team">Part of the team? <a href="/survey/' + STUDY.slug +
+      '/test">Open it in test mode</a> or find it in the <a href="/studio/#' + STUDY.slug +
+      '">Studio</a>.</p></div>';
+  }
+
   function afterSession(waitForClick) {
     buildSteps();
+    testNotes = recall("test_notes") || {};
+    if (IS_TEST) { try { reviewToken = new URLSearchParams(location.search).get("review") || ""; } catch(e) {}
+      if (reviewToken) fetch('/api/test-review/'+encodeURIComponent(reviewToken)).then(function(r){return r.json();}).then(function(d){if(d.payload){answers=d.payload.answers||{};testNotes=d.payload.notes||{};cur=Math.min(Number(d.payload.current||0),steps.length-1);store('answers',answers);render();toastTest('Shared review loaded — answers and team notes restored.');}});
+    }
     $("#respondent-code").textContent = (IS_TEST ? "TEST " : "") + SESSION.respondent_code;
 
     // the welcome facts and the always-available TPP card follow the active study
@@ -2117,7 +2896,7 @@
       });
     }
     if (IS_TEST) document.body.classList.add("testmode");
-    $("#hud").hidden = false;
+    $("#hud").hidden = !gamifyOn();
     $("#points").textContent = String(points);
     var rb = $("#rank-badge");
     if (rb) rb.textContent = rankFor(points);
@@ -2138,6 +2917,12 @@
 
     if (waitForClick) {
       $("#start-btn").addEventListener("click", function () {
+        var pref = document.querySelector('input[name="audio-pref"]:checked');
+        audioPref = pref ? pref.value : "manual";
+        store("audio_pref", audioPref); setSound(audioPref !== "off");
+        var vpref = document.querySelector('input[name="voice-pref"]:checked');
+        store("voice_pref", vpref ? vpref.value : "manual");
+        if (vpref && vpref.value === "voice") setVoice(true);
         t0 = Date.now();
         $("#welcome").remove();
         stopNarration();

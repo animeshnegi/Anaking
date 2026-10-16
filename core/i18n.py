@@ -133,9 +133,20 @@ def extract_strings(cfg: dict) -> list[dict]:
             _put(out, f"q:{qid}:row:{r.get('code')}", r.get("label"), "row", qid)
         for c in q.get("cols", []) or []:
             _put(out, f"q:{qid}:col:{c.get('code')}", c.get("label"), "row", qid)
+        # a grid also shows a title, a name over each axis, the N/A wording, a comment
+        # prompt and one caption per column of the scale - all of it respondent-facing
+        g_ = q.get("grid") or {}
+        _put(out, f"q:{qid}:grid_title", g_.get("title"), "axis", qid)
+        _put(out, f"q:{qid}:row_label", g_.get("row_label"), "axis", qid)
+        _put(out, f"q:{qid}:col_label", g_.get("col_label"), "axis", qid)
+        _put(out, f"q:{qid}:na_label", (q.get("na") or {}).get("label"), "axis", qid)
+        _put(out, f"q:{qid}:comment_label", (q.get("comments") or {}).get("label"), "question", qid)
         sc_ = q.get("scale") or {}
         _put(out, f"q:{qid}:min_label", sc_.get("min_label"), "scale", qid)
+        _put(out, f"q:{qid}:mid_label", sc_.get("mid_label"), "scale", qid)
         _put(out, f"q:{qid}:max_label", sc_.get("max_label"), "scale", qid)
+        for pt in sc_.get("points", []) or []:
+            _put(out, f"q:{qid}:pt:{pt.get('v')}", pt.get("label"), "scale", qid)
         for i, fl in enumerate(sc_.get("face_labels", []) or []):
             _put(out, f"q:{qid}:face:{i}", fl, "scale", qid)
         _put(out, f"q:{qid}:before_label", q.get("before_label"), "scale", qid)
@@ -184,9 +195,10 @@ def _set(cfg: dict, key: str, value: str) -> bool:
             return False
         if field in ("stem", "stem_html", "help", "placeholder", "vignette",
                      "concept", "concept_html", "body", "body_html", "min_label",
-                     "max_label", "before_label", "after_label"):
-            if field in ("min_label", "max_label", "before_label", "after_label"):
-                if field in ("min_label", "max_label"):
+                     "mid_label", "max_label", "before_label", "after_label"):
+            if field in ("min_label", "mid_label", "max_label",
+                         "before_label", "after_label"):
+                if field in ("min_label", "mid_label", "max_label"):
                     q.setdefault("scale", {})[field] = value
                 else:
                     q[field] = value
@@ -215,6 +227,22 @@ def _set(cfg: dict, key: str, value: str) -> bool:
             fl = q.get("scale", {}).get("face_labels") or []
             if 0 <= int(parts[2]) < len(fl):
                 fl[int(parts[2])] = value
+                return True
+        if field in ("grid_title", "row_label", "col_label") and len(parts) == 2:
+            q.setdefault("grid", {})[{"grid_title": "title", "row_label": "row_label",
+                                     "col_label": "col_label"}[field]] = value
+            return True
+        if field == "na_label" and len(parts) == 2:
+            q.setdefault("na", {})["label"] = value
+            return True
+        if field == "comment_label" and len(parts) == 2:
+            q.setdefault("comments", {})["label"] = value
+            return True
+        if field == "pt" and len(parts) == 3:
+            pt = next((x for x in (q.get("scale") or {}).get("points", []) or []
+                       if str(x.get("v")) == parts[2]), None)
+            if pt is not None:
+                pt["label"] = value
                 return True
         if field == "loopitem" and len(parts) == 3:
             it = next((x for x in q.get("items", []) or []

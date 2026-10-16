@@ -29,7 +29,7 @@ from core.i18n import (LANG_BY_CODE, apply_language, default_language, extract_s
 from core.qc import qc_flags
 from core.seed import load_task_map
 from core.survey_spec import TERMINATE_TEXT
-from models import Respondent, Study
+from models import Respondent, Study, StudyError
 
 from .helpers import json_body
 
@@ -46,10 +46,14 @@ def _survey_page(slug: str):
     is_test = request.path.rstrip("/").endswith("/test")
     # The respondent link only opens once the study is live; test mode always renders so
     # the team can preview a draft (the Studio's "Preview" button opens /survey/<slug>/test).
-    if not study.effective_live() and not is_test:
+    paused = study.status == "paused"
+    if not study.effective_live() and not is_test and not paused:
         return render_template("survey/not_live.html", slug=slug), 403
+    # A paused study still serves the page: nobody can *start* (the client shows a paused
+    # notice and /api/start refuses), but anyone already answering can resume and finish.
     return render_template("survey/survey.html", slug=slug, study_title=study.title,
-                           is_test=is_test, is_draft=not study.effective_live())
+                           is_test=is_test, is_draft=not study.effective_live(),
+                           is_paused=paused and not is_test)
 
 
 @bp.get("/survey/")
@@ -136,6 +140,8 @@ def spec(slug="beacon"):
         "conjoint_scene": cfg.get("conjoint_scene"),
         "conjoint_min_dwell": cfg.get("conjoint_min_dwell", 12),
         "use_tts": cfg.get("use_tts", False),
+        # gamified respondent experience (ring/points/confetti); absent or true keeps it on
+        "gamify": cfg.get("gamify", True),
         "tpp": cfg.get("tpp", {}),
         # study-wide AI-answer check settings; questions can override with ai_check/ai_action
         "ai_check": cfg.get("qc", {}).get("ai", {}),
@@ -163,6 +169,10 @@ def start():
     if not study:
         return jsonify({"error": "unknown study"}), 404
     if not study.effective_live():
+        if study.status == "paused":
+            return jsonify({"error": "This study is paused - the research team has stopped new "
+                                     "responses for now. Please try again later.",
+                            "paused": True}), 403
         return jsonify({"error": "study not live"}), 403
     lang = str(body.get("language") or "")[:12]
     if lang and not valid_language(lang):
@@ -182,6 +192,26 @@ def start():
                     "task_order": assignment["task_order"],
                     "alt_positions": assignment["alt_positions"],
                     "from_prebuilt_map": resp.code in (task_map or {})})
+
+
+@bp.post("/api/test-review")
+def save_test_review():
+    body = json_body()
+    try:
+        token = Study.save_test_review(body.get("study") or "beacon", {
+            "answers": body.get("answers") if isinstance(body.get("answers"), dict) else {},
+            "notes": body.get("notes") if isinstance(body.get("notes"), dict) else {},
+            "current": int(body.get("current") or 0),
+        }, str(body.get("token") or ""))
+    except StudyError as e:
+        return jsonify({"error": e.message}), e.status
+    return jsonify({"ok": True, "token": token, "url": f"/survey/{body.get('study') or 'beacon'}/test?review={token}"})
+
+
+@bp.get("/api/test-review/<token>")
+def get_test_review(token):
+    review = Study.get_test_review(token)
+    return jsonify(review if review else {"error": "review not found"}), (200 if review else 404)
 
 
 @bp.post("/api/save")

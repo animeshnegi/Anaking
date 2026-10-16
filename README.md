@@ -17,18 +17,21 @@ Anaking/
 ├── routes/             one file per app, each mounted on its own URL
 │   ├── home.py         /            landing page + legacy redirects
 │   ├── survey.py       /survey/…    respondent survey + /api/* (incl. /api/check_text)
-│   ├── studio.py       /studio/     survey builder      + /api/studio/* (translate, move, outline)
+│   ├── studio.py       /studio/     survey builder      + /api/studio/* (translate, move, outline,
+│   │                                                    duplicate, invites, launch, remind, pause)
 │   └── admin.py        /admin/      dashboard, exports  + /api/admin/*
 ├── core/               domain logic (no Flask routes in here)
 │   ├── conjoint.py     balanced design generator + per-respondent randomisation
+│   ├── mailer.py       SMTP settings + invite/reminder mail bodies for the launch flow
 │   ├── qc.py           speeder / attention / straight-line / verbatim-quality flags
 │   ├── ai_detect.py    AI-generated & pasted answer detection + proofreading notes
 │   ├── i18n.py         language catalogue + extraction/merge of respondent-visible strings
 │   ├── translator.py   keyless machine translation (tag-safe), injectable for tests
 │   ├── outline.py      "Download Word Outline" - stdlib .docx questionnaire outline
 │   ├── reporting.py    flattening, export sheets, quick analysis
+│   ├── screening.py    screening (screen in / screen out): config cleanup + plain-English logic
 │   ├── seed.py         seeds the BEACON study from survey_spec + data/design
-│   ├── survey_spec.py  the 24-question BEACON instrument
+│   ├── survey_spec.py  the BEACON instrument
 │   └── xlsx_export.py  openpyxl or stdlib .xlsx writer
 ├── templates/
 │   ├── home.html       landing page
@@ -65,7 +68,7 @@ Three separate apps, each on its own URL (the home page at `/` links to all of t
 | App | URL | What it is |
 |---|---|---|
 | **Home** | `/` | Landing page: links to the three apps + list of studies on the server |
-| **Survey** | `/survey/` | Respondent link — the live BEACON survey |
+| **Survey** | `/survey/` | Respondent link — the live BEACON survey. Respondents never see which section a question belongs to (screeners / main are team-only), and while a question is on screen the project details and progress line are hidden; the gamified strip (ring, points, rank, mic, sound) stays on top when *Gamified feel* is on — see below |
 | | `/survey/test` | Same survey, stored as **test data** (codes T001, T002 …) |
 | | `/survey/<slug>` , `/survey/<slug>/test` | Any study launched from the Studio (test mode also previews drafts) |
 | **Studio** | `/studio/` (`/studio/#<slug>` opens a study) | Builder — create / edit / launch studies, design the walkthrough, generate conjoint designs, per-study analysis |
@@ -88,6 +91,32 @@ Configuration (environment variables): `PORT`, `HOST`, `DB_PATH`, `VOICE_DIR`, `
 `MEDIA_DIR`, `SECRET_KEY`. Defaults put the database in `data/survey.db`, respondent recordings in
 `uploads/voice/` and uploaded narration in `uploads/narration/<study>/`.
 
+### Respondent survey: answer by voice & the gamified feel
+
+**Answer by voice.** The welcome page asks *How would you like to answer?* — **Tap my answers** (the
+default) or **Answer by voice**. Voice uses the browser's own speech recognition (Web Speech API), so
+there is no server key, account or cost. It works in Chrome, Edge and Safari; elsewhere the option stays
+visible but disabled, with the reason. Respondents say an option's name or its number — several joined
+with *and* — then *next* (also *back* and *clear*). The mic button in the top strip and the **Stop**
+button on the voice bar switch voice off and on at any time; tapping always works too.
+
+* Speech is recognised by the browser's speech service (Google's in Chrome), so check that suits your
+  respondents before a live field.
+* The browser asks for microphone permission the first time voice is turned on. If access is blocked,
+  no microphone is found or the speech service cannot be reached, voice stops and the coach says why;
+  the survey carries on with taps. Inside an embedded preview the browser may refuse the microphone —
+  open the survey in its own tab to use voice.
+
+**Coming back.** If a respondent returns in the same browser before answering anything, the welcome page
+(and the choice of how to answer) shows again; the saved session is kept. Once a question has been
+answered, reloading resumes at the next question. To start over in a browser, add `?new=1` to the link.
+
+**Gamified feel** (Studio → the study → *Settings & QC* → *Respondent experience*; on by default): the
+progress ring, insight points, ranks and confetti; a bull's-eye ripple on every answer; a "+N" that floats
+up when a bonus lands; the arrow-in-target finish. While a question is on screen the project details
+(brand, study, respondent code, timer) and the progress line are hidden, and a slim strip keeps the ring,
+points, rank, mic and sound buttons on top. With the gamified feel off, questions show with nothing on top.
+
 ### Studio workspace (Studio → Questions)
 
 The builder is a three-pane workspace - nothing to open or apply, and **every change autosaves**
@@ -96,12 +125,14 @@ the bar always shows *All changes saved · 14:02* / *Unsaved changes* / *Not sav
 
 | Pane | What it does |
 |---|---|
-| **Outline** (left) | Sections with their questions. Click a row to edit it; hover for move / duplicate / delete (delete offers **Undo**). **+ Add question** opens a picker of plain-English types ("Choose one", "Rating grid", "Open text"…) grouped by kind; the new question lands after the selected one and gets the next free id. Section titles are edited in place. |
-| **Editor** (middle) | One scrolling form for the selected question, with a jump bar: **Question** (rich text + help), **Answer options / Rows & scale** (inline list with code, label, ➔ Pipe in answer, Pin / Exclusive / Other chips, image, reorder, one-click *None of these* / *Not applicable* / *Other*, paste a list), **Display & order** (layout segment, randomise, hide number / codes, font / size / alignment), **Show only when…** (conditions in sentence form - *when Q1 has selected Oncology*, and/or, invert), **Image or video**, **Advanced (JSON)**. Id, type (convertible - compatible answers are kept), section and Required sit in the header. |
+| **Outline** (left) | Sections with their questions, as either a compact **List** or a grid of **Thumbnails** (the switch sits in the outline header, and the choice is remembered). Thumbnails show a miniature of the question — title, wording and a schematic of the answer area (option rows, rating scale, text box…). Click a row or card to edit it; hover for move / duplicate / delete (delete offers **Undo**). **+ Add question** opens a picker of plain-English types ("Choose one", "Rating grid", "Open text"…) grouped by kind; the new question lands after the selected one and gets the next free id. Sections are added from **+ Section** — in the header, so it is always reachable — or the button under the last section, and their titles are renamed in place. A new study starts with **one empty section**: section names are never predefined, they come from the author (leave one blank and it reads "Untitled section"). |
+| **Editor** (middle) | Three tabs — **Content & Settings**, **Conditional Display** (who gets the question, in sentence form) and **Screening** (who is ended, in sentence form) — with a **PREVIEW** button for the full-size question, over one scrolling form with a jump bar: **Question** (rich text + help), **Answer options / Rows & scale** (one row per entry: position number, drag grip, code, label, ➔ Pipe in answer, image, an always-visible tool strip — move up, move down, delete — and a one-click *None of these* / *Not applicable* / *Other*, *Enter multiple…*; Pin / Exclusive / Other behaviour chips sit on their own line under the label. Sequence changes three ways: **drag the grip**, the **▲ / ▼** buttons, or focus a grip and press **↑ / ↓**), **Display & order** (layout segment, randomise, hide number / codes, font / size / alignment), **Image or video**, **Advanced (JSON)** — while **Conditional Display** holds the *Show only when…* conditions in sentence form (*when Q1 has selected Oncology*, and/or, invert) and marks the tab when rules are on. **ID** with the question **Title** stacked underneath it, type (convertible - compatible answers are kept), section and Required sit in the header. The Title is a short internal label for the sidebar and exports; respondents never see it. |
 | **Live preview** (right) | The question rendered by the same code respondents run; updates as you type. Sample answers for piping / logic, reshuffle, desktop / phone width, ▶ **Test** opens it full size. |
 
-Rich text: bold / italic / underline / strike / superscript, text & highlight colour, lists,
-bigger / smaller, clear formatting. **Piping:** every text field has a **➔ Pipe in answer**
+Rich text: text size and font, bold / italic / underline / strike / superscript / subscript,
+text & highlight colour, alignment, bullet & numbered lists, links, tables, "…" for the rarer
+controls, a `</>` source view, full screen, and **+ Add Image & Video Attachments** straight
+under the question text. **Piping:** every text field has a **➔ Pipe in answer**
 button - click where the answer should appear, press it, pick from a searchable list grouped by
 earlier question ("Their answer (as text)", "Answer code", "First / last option they ticked",
 "Text typed in Other", a fixed option label, a row's rating, the question wording), each with an
@@ -109,9 +140,87 @@ earlier question ("Their answer (as text)", "Answer code", "First / last option 
 (`{Q3}`, `{Q3.code}`, `{Q3.opt:2}`, `{Q3.first}`/`{Q3.last}`, `{Q3.other}`, `{Q3.row:a}`,
 `{Q3.r:a}`, `{Q3.stem}`); an unanswered reference renders as "…".
 
+### Screening — screen in / screen out (Studio → a question → **Screening**)
+
+Every question can decide who carries on. The rules are **data on the question**, never code in
+the app, so the questionnaire always explains itself and the same study can be copied, translated
+and re-fielded with its screening intact.
+
+| | |
+|---|---|
+| **No screening** | Everybody carries on. |
+| **Screen out when…** | The matched respondent is ended and reads your closing text. |
+| **Only continue when…** (qualify) | Only matched respondents carry on; everybody else is ended here. |
+
+A rule is **all** / **any** of a list of conditions, each built from three controls:
+*which question* (this one, any earlier one — later ones are grouped separately because they can
+never fire here), *the condition*, and *the value*. The condition list follows the question type:
+
+| Question type | Conditions |
+|---|---|
+| Choose one / multi-select | is · is not · **is any of** · **is none of** · **includes all of** · is exactly these · **selects at least / at most / exactly** *n* |
+| Number, slider, NPS, date | equals · does not equal · is more than · at least · less than · at most · is between |
+| Open text / loop | mentions · does not mention · is shorter than *n* words |
+| Rating grid, rating scale, semantic, heat map, numeric matrix | row is / is not / is at least / is at most |
+| Ranking | ranks … first · ranks … in the top *n* · includes all of · selects at least … |
+| Any type | was answered · was skipped |
+
+Groups and counts are the point: *"screen out when Q1 is any of Radiation oncology, Surgical
+oncology"*, *"screen out when Q15 selects fewer than 2"*, *"continue only when Q3 is at least 5"*,
+or the cross-question *"screen out when Q1 is Haematology only **and** Q3 is less than 10"*.
+
+**Check the rule** decides when it is applied: **⚡ As soon as it matches** ends the survey the
+moment the answer is given (the default for choice questions), while **→ When they press Next**
+lets the respondent change their mind first (the default wherever a number, a grid or a text box
+is still being filled in). Add the **Reason for the data** (the line recorded in the screen-out
+report) and, if the standard closing wording is not right, the **Text the respondent reads**.
+
+**Try it** at the bottom of the card: pick an answer by hand and read the verdict — *SCREENED OUT*
+with the reason and the exact text the respondent would see, or *CONTINUES*. Earlier questions
+use the same sample answers as the live preview.
+
+Two more ways in:
+* a **Screen out** switch on every answer option (Content & Settings → Answer options) — the
+  quick one-click version, and it is shown on the Screening tab too;
+* the **screen** badge in the outline, whose tooltip spells the whole rule out.
+
+The rules also travel into the paperwork: the Word outline prints `Logic: screening: …` under the
+question, the Excel data dictionary gets a `(screening)` row per rule, and the screen-out reason
+and question id are stored on the respondent and shown in Admin.
+
+**Conjoint experiments** are authored on the question that asks them: add a *Conjoint* question
+and its editor shows the experiment name, a rich-text description (the `{amount}` / `{product}`
+placeholder sentence), the attributes — each with **Add Range Levels** (from / to / step / suffix
+→ *Build levels*), **Add Images** (a picture per level), **Group Inclusion** (ask the attribute in
+a rotating subset of the sets) and *Lower is better* — each with its own levels and `+ Add Level`
+(never below two), then **Allow "none"** with its own wording and **Configure Sampling**
+(*Number of Cards*, *Number of Sets*). **Generate design** stores a balanced, dominance-free
+design on the study; the respondent survey renders the authored labels, levels and level images,
+skips a group-inclusion attribute in the sets it is not asked in, and the Excel export, conjoint
+analysis and QC (uniform choice) all read the same design. The study-level **Conjoint** tab appears
+only once the study has a conjoint question (or an existing generated design) and shows what that
+study will field.
+
 The dashboard (Studio home) lists studies as cards with completion stats, search and a
-draft / live / closed filter; status is switched from the segment in the builder bar
-(launching asks for confirmation and flushes any pending save first).
+draft / live / paused / closed filter; status is switched from the segment in the builder bar
+(launching asks for confirmation and flushes any pending save first). Every card also carries the
+study's **Actions**: Preview Survey (opens the testing link in a new window), Duplicate Survey
+(a full copy as a fresh draft), Launch Survey, Pause Survey / Relaunch Survey and Send Reminder.
+
+### Launching, invites & reminders (Studio home → the study card)
+
+**Launch Survey** asks for the recipient list (paste one person per line as `email` or
+`email, name`, or upload a CSV with an `email` column and an optional `name` column), a subject and
+an optional message. Launching takes the study live and gives every recipient a personal
+`/survey/<slug>?rid=…` link, so responses can be attributed back to the person who was invited.
+Mail goes out over SMTP when it is configured (`BEACON_SMTP_HOST`, `_PORT`, `_USER`, `_PASSWORD`,
+`_FROM`, `_TLS`, or a `data/mail.json` with the same keys); without it every send is still recorded
+in the built-in outbox — open **View invite log** on the card to see each recipient, its status
+(sent / queued / failed), its copyable link and a CSV download (`/api/studio/invites.csv`).
+**Send Reminder** nudges only the people who have not taken part yet, reuses their personal link and
+is capped at two per launch. **Pause Survey** stops *new* starts only: `/api/start` is refused with
+`paused: true` and respondents see a paused notice, while anyone already answering can save and
+submit normally; **Relaunch Survey** opens the study to new respondents again.
 
 Rich text is whitelisted on save (`core/sanitize.py`) and again in the browser
 (`static/js/qlogic.js`), so only formatting survives — no scripts, event handlers or unsafe URLs.
@@ -159,8 +268,9 @@ Variables** (names captured from the respondent link, e.g. `?panel=A` → export
 
 ### The add-item library (Studio → + Add question)
 
-Grouped exactly like a commercial builder: **Questions** - Multiple Choice (incl. image
-options), Grid / Rating Scale, Rank Order, Scale, Text Entry, Numeric Entry, Net Promoter,
+Grouped exactly like a commercial builder: **Questions** - Single Select (incl. image
+options), Grid, Rating Scale (rows on one scale with low-end, mid and high-end labels),
+Rank Order, Scale, Text Entry, Numeric Entry, Net Promoter,
 Constant Sum, Numeric Matrix, Date, Delta (before / after / change); **Methodologies** -
 Max Diff experiment, Conjoint, Concept Test, Heatmap; **Survey flow** - Welcome Page,
 Thank You Page, Question Page, Question Loop, Page Randomizer; **Objects** - Embedded
@@ -235,16 +345,28 @@ Production: `gunicorn -w 2 -b 0.0.0.0:8000 "app:create_app()"`
 python3 -m pytest                               # in-process suite, no server needed
 python3 -m pytest tests/test_ai_detect.py       # AI-answer detection, flags, queue, exports
 python3 -m pytest tests/test_globalize.py       # languages, translation, outline, new question types
+python3 -m pytest tests/test_sections.py        # sections start empty, naming, save validation
+python3 -m pytest tests/test_screening.py       # screening config on save, plain-English logic, outline & export
 
 python3 app.py &                                # live-server scripts
 python3 scripts/e2e_live_server.py              # full flow, screen-outs, QC flags, exports
 python3 scripts/e2e_reuse_live_server.py        # test/real scopes, xlsx, reset & reuse
 python3 scripts/seed_demo.py                    # 7 demo respondents + sample workbook
 node scripts/dom/studio_workspace_test.js       # Studio workspace: outline/editor/preview, autosave (needs jsdom)
+node scripts/dom/studio_reorder_test.js         # option rows: drag / ▲▼ / keyboard reorder, delete button
+node scripts/dom/survey_chrome_test.js          # respondent chrome: no section names, project details hidden while answering, gamified strip on top
+node scripts/dom/studio_sections_test.js        # outline: blank starter section, + Section, Title field, thumbnails view
+node scripts/dom/studio_conjoint_test.js        # Studio conjoint editor + the tab only showing for conjoint studies
+node scripts/dom/survey_conjoint_test.js        # respondent conjoint: authored labels/levels/images, group inclusion, none
+node scripts/dom/studio_actions_test.js         # dashboard actions: preview / duplicate / launch / pause / relaunch / reminder
 node scripts/dom/pipe_picker_test.js            # Studio pipe picker (needs jsdom: npm i jsdom)
 node scripts/dom/survey_ai_check_test.js        # respondent AI check: chip, gate, proofreading step
 node scripts/dom/ai_check_team_test.js          # Studio AI settings + Admin review queue
 node scripts/dom/globalize_test.js              # SURVEY OPTIONS menu, library, Globalize panel, language picker
+node scripts/dom/screening_engine_test.js        # screening engine: groups, counts, qualify, live vs Next (no jsdom)
+node scripts/dom/voice_commands_test.js          # voice answering: parser, welcome option, mic bar + Stop, blocked / silent mic messages, manual fallback
+node scripts/dom/screening_studio_test.js        # Studio screening tab: modes, rule builder, tester, saved config
+node scripts/dom/screening_survey_test.js        # respondent screening: ends on the spot, reason recorded
 ```
 
 ## Study design material
